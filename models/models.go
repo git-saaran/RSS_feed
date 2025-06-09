@@ -38,6 +38,9 @@ type FeedSource struct {
 	AvgLatency   float64   `json:"avgLatency"`
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
+	Description  string    `json:"description"`
+	LastFetched  time.Time `json:"lastFetched"`
+	LastError    string    `json:"lastError"`
 }
 
 // NewsItem represents a news article
@@ -47,31 +50,42 @@ type NewsItem struct {
 	Link         string    `json:"link"`
 	Description  string    `json:"description"`
 	PubDate      time.Time `json:"pubDate"`
+	Published    time.Time `json:"published"`
 	Category     string    `json:"category"`
 	Source       string    `json:"source"`
-	IsStockNews  bool      `json:"isStockNews"`
-	TimeAgo      string    `json:"timeAgo"`
-	StockSymbols []string  `json:"stockSymbols"`
-	WordCount    int       `json:"wordCount"`
-	ReadTime     int       `json:"readTime"`
+	SourceID     string    `json:"sourceId"`
+	SourceName   string    `json:"sourceName"`
+	ImageURL     string    `json:"imageUrl"`
+	Content      string    `json:"content"`
+	Author       string    `json:"author"`
+	Language     string    `json:"language"`
+	Country      string    `json:"country"`
+	Sentiment    float64   `json:"sentiment"`
 	Score        float64   `json:"score"`
-	Sentiment    string    `json:"sentiment"`
 	Tags         []string  `json:"tags"`
+	IsRead       bool      `json:"isRead"`
+	IsBookmarked bool      `json:"isBookmarked"`
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
 // DashboardStats contains aggregated statistics
 type DashboardStats struct {
-	TotalNews     int     `json:"totalNews"`
-	StockNews     int     `json:"stockNews"`
-	ActiveFeeds   int     `json:"activeFeeds"`
-	ErroredFeeds  int     `json:"erroredFeeds"`
-	DisabledFeeds int     `json:"disabledFeeds"`
-	AvgLatency    float64 `json:"avgLatency"`
-	TopSentiment  string  `json:"topSentiment"`
-	CacheHitRate  float64 `json:"cacheHitRate"`
-	MemoryUsageMB float64 `json:"memoryUsageMB"`
+	TotalNews      int           `json:"totalNews"`
+	StockNews      int           `json:"stockNews"`
+	ActiveFeeds    int           `json:"activeFeeds"`
+	ErroredFeeds   int           `json:"erroredFeeds"`
+	DisabledFeeds  int           `json:"disabledFeeds"`
+	AvgLatency     float64       `json:"avgLatency"`
+	TopSentiment   string        `json:"topSentiment"`
+	CacheHitRate   float64       `json:"cacheHitRate"`
+	MemoryUsageMB  float64       `json:"memoryUsageMB"`
+	TotalFeeds     int           `json:"totalFeeds"`
+	TotalNewsItems int           `json:"totalNewsItems"`
+	LastUpdateTime time.Time     `json:"lastUpdateTime"`
+	Uptime         time.Duration `json:"uptime"`
+	RequestsServed int           `json:"requestsServed"`
+	Errors         int           `json:"errors"`
 }
 
 // DashboardData contains all dashboard information
@@ -79,6 +93,7 @@ type DashboardData struct {
 	Sources    []FeedSource   `json:"sources"`
 	News       []NewsItem     `json:"news"`
 	LastUpdate time.Time      `json:"lastUpdate"`
+	LastUpdated time.Time     `json:"lastUpdated"`
 	Stats      DashboardStats `json:"stats"`
 }
 
@@ -118,16 +133,18 @@ type Item struct {
 
 // FilterOptions defines news filtering options
 type FilterOptions struct {
-	Source    string    `json:"source"`
-	Category  string    `json:"category"`
-	Sentiment string    `json:"sentiment"`
-	StockOnly bool      `json:"stockOnly"`
-	DateFrom  time.Time `json:"dateFrom"`
-	DateTo    time.Time `json:"dateTo"`
-	MinScore  float64   `json:"minScore"`
-	Keywords  []string  `json:"keywords"`
-	SortBy    string    `json:"sortBy"`
-	SortOrder string    `json:"sortOrder"`
-	Offset    int       `json:"offset"`
-	Limit     int       `json:"limit"`
+	Source     string    `json:"source"`
+	Category   string    `json:"category"`
+	Sentiment  string    `json:"sentiment"`
+	StockOnly  bool      `json:"stockOnly"`
+	DateFrom   time.Time `json:"dateFrom"`
+	DateTo     time.Time `json:"dateTo"`
+	StartTime  time.Time `json:"startTime"`
+	EndTime    time.Time `json:"endTime"`
+	MinScore   float64   `json:"minScore"`
+	Keywords   []string  `json:"keywords"`
+	SortBy     string    `json:"sortBy"`
+	SortOrder  string    `json:"sortOrder"`
+	Offset     int       `json:"offset"`
+	Limit      int       `json:"limit"`
 }

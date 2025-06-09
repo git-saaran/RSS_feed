@@ -1,0 +1,11 @@
+[2025-06-10 00:39:01] INFO [feed.go:98] Starting feed manager
+[2025-06-10 00:39:01] INFO [feed.go:121] Updating all feeds
+[2025-06-10 00:39:01] INFO [main.go:110] Starting RSS Feed Dashboard on :8080
+[2025-06-10 00:39:01] INFO [main.go:111] Available at http://localhost:8080
+[2025-06-10 00:39:01] INFO [main.go:112] Features: Real-time updates, sentiment analysis, enhanced error handling
+[2025-06-10 00:39:01] ERROR [feed.go:140] Error fetching feed Reuters: error fetching feed: Get "http://feeds.reuters.com/reuters/topNews": dial tcp: lookup feeds.reuters.com: no such host
+[2025-06-10 00:39:02] INFO [feed.go:166] Updated 35 news items
+[2025-06-10 00:39:41] INFO [main.go:24] Request: GET /
+[2025-06-10 00:39:41] INFO [main.go:29] Completed / in 0s
+[2025-06-10 00:39:41] INFO [main.go:24] Request: GET /api/news?limit=10
+[2025-06-10 00:39:41] INFO [main.go:29] Completed /api/news?limit=10 in 1.0129ms

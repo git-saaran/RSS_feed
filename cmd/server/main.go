@@ -10,10 +10,58 @@ import (
 
 	"rss_feed/config"
 	"rss_feed/internal/feed"
+	"rss_feed/internal/handlers"
 	"rss_feed/pkg/logger"
 
 	"github.com/gorilla/mux"
 )
+
+// LoggingMiddleware logs HTTP requests
+func LoggingMiddleware(log *logger.Logger) mux.MiddlewareFunc {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			log.Info("Request: %s %s", r.Method, r.RequestURI)
+
+			next.ServeHTTP(w, r)
+
+			duration := time.Since(start)
+			log.Info("Completed %s in %v", r.RequestURI, duration)
+		})
+	}
+}
+
+// CORSMiddleware handles CORS headers
+func CORSMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// RecoveryMiddleware recovers from panics
+func RecoveryMiddleware(log *logger.Logger) mux.MiddlewareFunc {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer func() {
+				if err := recover(); err != nil {
+					log.Error("Recovered from panic: %v", err)
+					http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				}
+			}()
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
 
 func main() {
 	// Initialize configuration
@@ -25,33 +73,29 @@ func main() {
 	// Initialize feed manager
 	feedManager := feed.NewFeedManager(cfg, log)
 
-	// Initialize WebSocket manager
-	wsManager := NewWebSocketManager(logger)
-
 	// Initialize handlers
-	handlers := NewHandlers(feedManager, wsManager, logger)
+	handler := handlers.NewHandlers(feedManager, log)
 
 	// Setup routes
 	r := mux.NewRouter()
-	r.HandleFunc("/", handlers.HomeHandler).Methods("GET")
-	r.HandleFunc("/ws", handlers.WebSocketHandler).Methods("GET")
-	r.HandleFunc("/api/health", handlers.HealthHandler).Methods("GET")
-	r.HandleFunc("/api/news", handlers.NewsHandler).Methods("GET")
-	r.HandleFunc("/api/feeds", handlers.FeedsHandler).Methods("GET")
-	r.HandleFunc("/api/feeds/refresh", handlers.RefreshHandler).Methods("POST")
-	r.HandleFunc("/api/stats", handlers.StatsHandler).Methods("GET")
+	r.HandleFunc("/", handler.HomeHandler).Methods("GET")
+	r.HandleFunc("/api/health", handler.HealthHandler).Methods("GET")
+	r.HandleFunc("/api/news", handler.NewsHandler).Methods("GET")
+	r.HandleFunc("/api/feeds", handler.FeedsHandler).Methods("GET")
+	r.HandleFunc("/api/feeds/refresh", handler.RefreshHandler).Methods("POST")
+	r.HandleFunc("/api/stats", handler.StatsHandler).Methods("GET")
 
 	// Add middleware
-	r.Use(LoggingMiddleware(logger))
+	r.Use(LoggingMiddleware(log))
 	r.Use(CORSMiddleware)
-	r.Use(RecoveryMiddleware(logger))
+	r.Use(RecoveryMiddleware(log))
 
 	// Create HTTP server
 	srv := &http.Server{
-		Addr:         config.Port,
+		Addr:         cfg.Port,
 		Handler:      r,
-		ReadTimeout:  config.ServerTimeout,
-		WriteTimeout: config.ServerTimeout,
+		ReadTimeout:  cfg.ServerTimeout,
+		WriteTimeout: cfg.ServerTimeout,
 		IdleTimeout:  time.Second * 60,
 	}
 
@@ -60,14 +104,14 @@ func main() {
 	defer cancel()
 
 	go feedManager.Start(ctx)
-	go wsManager.Start(ctx)
 
 	// Start server in goroutine
 	go func() {
-		logger.Info("Starting Enhanced Financial News Dashboard on %s", config.Port)
-		logger.Info("Features: WebSocket updates, sentiment analysis, enhanced error handling")
+		log.Info("Starting RSS Feed Dashboard on %s", cfg.Port)
+		log.Info("Available at http://localhost%s", cfg.Port)
+		log.Info("Features: Real-time updates, sentiment analysis, enhanced error handling")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Fatal("Server failed to start: %v", err)
+			log.Fatal("Server failed to start: %v", err)
 		}
 	}()
 
@@ -76,18 +120,18 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	logger.Info("Shutting down server...")
+	log.Info("Shutting down server...")
 
 	// Cancel background services
 	cancel()
 
 	// Shutdown server with timeout
-	ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
 
-	if err := srv.Shutdown(ctx); err != nil {
-		logger.Error("Server forced to shutdown: %v", err)
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Error("Server forced to shutdown: %v", err)
 	}
 
-	logger.Info("Server exited")
+	log.Info("Server exited")
 }
