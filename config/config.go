@@ -5,8 +5,6 @@ import (
 	"os"
 	"strconv"
 	"time"
-	
-	"rss_feed/models"
 )
 
 type Config struct {

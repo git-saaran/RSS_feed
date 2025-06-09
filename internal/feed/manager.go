@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"golang.org/x/net/html/charset"
-	"rss_feed/models"
 )
 
 type FeedManager struct {

@@ -235,20 +235,20 @@ func ExtractTags(title, description string) []string {
 	tagMap := make(map[string]bool)
 
 	categories := map[string][]string{
-		"banking":      {"BANK", "SBI", "HDFC", "ICICI", "AXIS", "KOTAK"},
-		"technology":   {"IT", "TECH", "TCS", "INFOSYS", "WIPRO", "SOFTWARE"},
-		"energy":       {"OIL", "GAS", "ENERGY", "RELIANCE", "ONGC", "BPCL"},
-		"automotive":   {"AUTO", "CAR", "MARUTI", "TATA MOTORS", "BAJAJ"},
-		"pharma":       {"PHARMA", "DRUG", "MEDICINE", "SUN PHARMA", "DR REDDY"},
-		"fmcg":         {"FMCG", "CONSUMER", "UNILEVER", "ITC", "NESTLE"},
-		"metals":       {"STEEL", "METAL", "TATA STEEL", "JSW", "HINDALCO"},
-		"telecom":      {"TELECOM", "MOBILE", "BHARTI", "AIRTEL", "JIO"},
-		"realty":       {"REAL ESTATE", "PROPERTY", "REALTY", "DLF"},
-		"mutual_fund":  {"MUTUAL FUND", "MF", "SIP", "NAV"},
-		"ipo":          {"IPO", "LISTING", "PUBLIC OFFERING"},
-		"results":      {"RESULTS", "EARNINGS", "QUARTERLY", "ANNUAL"},
-		"dividend":     {"DIVIDEND", "PAYOUT", "YIELD"},
-		"merger":       {"MERGER", "ACQUISITION", "DEAL", "TAKEOVER"},
+		"banking":     {"BANK", "SBI", "HDFC", "ICICI", "AXIS", "KOTAK"},
+		"technology":  {"IT", "TECH", "TCS", "INFOSYS", "WIPRO", "SOFTWARE"},
+		"energy":      {"OIL", "GAS", "ENERGY", "RELIANCE", "ONGC", "BPCL"},
+		"automotive":  {"AUTO", "CAR", "MARUTI", "TATA MOTORS", "BAJAJ"},
+		"pharma":      {"PHARMA", "DRUG", "MEDICINE", "SUN PHARMA", "DR REDDY"},
+		"fmcg":        {"FMCG", "CONSUMER", "UNILEVER", "ITC", "NESTLE"},
+		"metals":      {"STEEL", "METAL", "TATA STEEL", "JSW", "HINDALCO"},
+		"telecom":     {"TELECOM", "MOBILE", "BHARTI", "AIRTEL", "JIO"},
+		"realty":      {"REAL ESTATE", "PROPERTY", "REALTY", "DLF"},
+		"mutual_fund": {"MUTUAL FUND", "MF", "SIP", "NAV"},
+		"ipo":         {"IPO", "LISTING", "PUBLIC OFFERING"},
+		"results":     {"RESULTS", "EARNINGS", "QUARTERLY", "ANNUAL"},
+		"dividend":    {"DIVIDEND", "PAYOUT", "YIELD"},
+		"merger":      {"MERGER", "ACQUISITION", "DEAL", "TAKEOVER"},
 	}
 
 	for tag, keywords := range categories {

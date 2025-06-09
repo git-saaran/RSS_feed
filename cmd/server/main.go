@@ -8,10 +8,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gorilla/mux"
 	"rss_feed/config"
 	"rss_feed/internal/feed"
 	"rss_feed/pkg/logger"
+
+	"github.com/gorilla/mux"
 )
 
 func main() {
