@@ -1,10 +1,12 @@
-package main
+package config
 
 import (
 	"encoding/json"
 	"os"
 	"strconv"
 	"time"
+	
+	"rss_feed/models"
 )
 
 type Config struct {

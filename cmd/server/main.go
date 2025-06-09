@@ -9,17 +9,20 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"rss_feed/config"
+	"rss_feed/internal/feed"
+	"rss_feed/pkg/logger"
 )
 
 func main() {
 	// Initialize configuration
-	config := LoadConfig()
+	cfg := config.LoadConfig()
 
 	// Initialize logger
-	logger := NewLogger(config.LogLevel)
+	log := logger.NewLogger(cfg.LogLevel)
 
 	// Initialize feed manager
-	feedManager := NewFeedManager(config, logger)
+	feedManager := feed.NewFeedManager(cfg, log)
 
 	// Initialize WebSocket manager
 	wsManager := NewWebSocketManager(logger)
