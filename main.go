@@ -406,7 +406,9 @@ func getNewsFromCache() ([]NewsItem, string) {
 		newsCache[i].TimeAgo = timeAgo(newsCache[i].PubDate)
 	}
 
-	return newsCache, lastCacheTime.Format("Jan 2, 2006 at 3:04 PM")
+	// Format the time in IST
+	istTime := lastCacheTime.In(istLocation)
+	return newsCache, istTime.Format("Jan 2, 2006 at 3:04 PM")
 }
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
