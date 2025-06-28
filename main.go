@@ -194,6 +194,18 @@ func fetchRSSFeed(url string) (*RSS, error) {
 	return &rss, nil
 }
 
+// Load IST location
+var istLocation *time.Location
+
+func init() {
+	loc, err := time.LoadLocation("Asia/Kolkata")
+	if err != nil {
+		log.Printf("Warning: Could not load IST location, using local time: %v", err)
+		loc = time.Local
+	}
+	istLocation = loc
+}
+
 func parseTime(dateStr string) time.Time {
 	// Common RSS date formats
 	formats := []string{
@@ -212,38 +224,47 @@ func parseTime(dateStr string) time.Time {
 	}
 
 	dateStr = strings.TrimSpace(dateStr)
+	var t time.Time
+	var err error
 
 	// Try parsing with timezone first
-	if t, err := time.Parse("02-Jan-2006 15:04:05 MST", dateStr); err == nil {
-		return t
+	t, err = time.ParseInLocation("02-Jan-2006 15:04:05 MST", dateStr, istLocation)
+	if err == nil {
+		return t.In(istLocation)
 	}
 
 	// Try parsing without timezone
-	if t, err := time.Parse("02-Jan-2006 15:04:05", dateStr); err == nil {
-		return t
+	t, err = time.ParseInLocation("02-Jan-2006 15:04:05", dateStr, istLocation)
+	if err == nil {
+		return t.In(istLocation)
 	}
 
 	// Try parsing without seconds
-	if t, err := time.Parse("02-Jan-2006 15:04", dateStr); err == nil {
-		return t
+	t, err = time.ParseInLocation("02-Jan-2006 15:04", dateStr, istLocation)
+	if err == nil {
+		return t.In(istLocation)
 	}
 
 	// Try other standard formats
 	for _, format := range formats {
-		if t, err := time.Parse(format, dateStr); err == nil {
-			return t
+		t, err := time.ParseInLocation(format, dateStr, istLocation)
+		if err == nil {
+			return t.In(istLocation)
 		}
 	}
 
-	// If all parsing fails, return current time but don't log common invalid dates
+	// If all parsing fails, return current time in IST
 	if dateStr != "" && dateStr != "0000-00-00 00:00:00" {
 		log.Printf("Failed to parse date: %s", dateStr)
 	}
-	return time.Now()
+	return time.Now().In(istLocation)
 }
 
 func timeAgo(t time.Time) string {
-	duration := time.Since(t)
+	// Convert to IST if not already
+	t = t.In(istLocation)
+	now := time.Now().In(istLocation)
+	duration := now.Sub(t)
 
 	if duration < time.Minute {
 		return "Just now"
