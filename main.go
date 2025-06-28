@@ -141,6 +141,11 @@ var rssSources = map[string]struct {
 		Color: "#ea580c",
 		Name:  "NSE Financial Results",
 	},
+	"NDTV_PROFIT": {
+		URL:   "https://feeds.feedburner.com/ndtvprofit-latest",
+		Color: "#1e40af",
+		Name:  "NDTV Profit",
+	},
 }
 
 // Global cache for news items
@@ -677,8 +682,8 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
         </div>
         
         <div class="news-grid">
-            {{$sources := dict "TOI" "Times of India" "TH" "The Hindu" "BL" "Business Line" "LM" "LiveMint" "ZP" "Zerodha Pulse" "NSE_IT" "NSE Insider Trading" "NSE_BB" "NSE Buy Back" "NSE_FR" "NSE Financial Results"}}
-            {{$sourceOrder := slice "BS_MARKETS" "BS_NEWS" "BS_COMMODITIES" "BS_IPO" "BS_STOCK_MARKET" "BS_CRYPTO" "TOI" "TH" "BL" "LM" "ZP" "NSE_IT" "NSE_BB" "NSE_FR"}}
+            {{$sources := dict "TOI" "Times of India" "TH" "The Hindu" "BL" "Business Line" "LM" "LiveMint" "ZP" "Zerodha Pulse" "NSE_IT" "NSE Insider Trading" "NSE_BB" "NSE Buy Back" "NSE_FR" "NSE Financial Results" "NDTV_PROFIT" "NDTV Profit"}}
+            {{$sourceOrder := slice "BS_MARKETS" "BS_NEWS" "BS_COMMODITIES" "BS_IPO" "BS_STOCK_MARKET" "BS_CRYPTO" "NDTV_PROFIT" "TOI" "TH" "BL" "LM" "ZP" "NSE_IT" "NSE_BB" "NSE_FR"}}
             
             {{range $sourceOrder}}
             {{$source := .}}
