@@ -96,6 +96,36 @@ var rssSources = map[string]struct {
 		Color: "#7c3aed",
 		Name:  "Zerodha Pulse",
 	},
+	"BS_MARKETS": {
+		URL:   "https://www.business-standard.com/rss/markets-106.rss",
+		Color: "#1e40af",
+		Name:  "Business Standard - Markets",
+	},
+	"BS_NEWS": {
+		URL:   "https://www.business-standard.com/rss/markets/news-10601.rss",
+		Color: "#1e40af",
+		Name:  "Business Standard - News",
+	},
+	"BS_COMMODITIES": {
+		URL:   "https://www.business-standard.com/rss/markets/commodities-10608.rss",
+		Color: "#1e40af",
+		Name:  "Business Standard - Commodities",
+	},
+	"BS_IPO": {
+		URL:   "https://www.business-standard.com/rss/markets/ipo-10611.rss",
+		Color: "#1e40af",
+		Name:  "Business Standard - IPO",
+	},
+	"BS_STOCK_MARKET": {
+		URL:   "https://www.business-standard.com/rss/markets/stock-market-news-10618.rss",
+		Color: "#1e40af",
+		Name:  "Business Standard - Stock Market",
+	},
+	"BS_CRYPTO": {
+		URL:   "https://www.business-standard.com/rss/markets/cryptocurrency-10622.rss",
+		Color: "#1e40af",
+		Name:  "Business Standard - Cryptocurrency",
+	},
 	"NSE_IT": {
 		URL:   "https://nsearchives.nseindia.com/content/RSS/Insider_Trading.xml",
 		Color: "#ea580c",
@@ -171,18 +201,39 @@ func parseTime(dateStr string) time.Time {
 		"Mon, 02 Jan 2006 15:04:05 GMT",
 		"Mon, 2 Jan 2006 15:04:05 GMT",
 		"2006-01-02 15:04:05",
+		"02-Jan-2006 15:04:05",     // Format used by Business Standard
+		"02-Jan-2006 15:04",       // Format used by Business Standard (without seconds)
+		"02-Jan-2006 15:04:05 MST", // With timezone
 	}
 
 	dateStr = strings.TrimSpace(dateStr)
 
+	// Try parsing with timezone first
+	if t, err := time.Parse("02-Jan-2006 15:04:05 MST", dateStr); err == nil {
+		return t
+	}
+
+	// Try parsing without timezone
+	if t, err := time.Parse("02-Jan-2006 15:04:05", dateStr); err == nil {
+		return t
+	}
+
+	// Try parsing without seconds
+	if t, err := time.Parse("02-Jan-2006 15:04", dateStr); err == nil {
+		return t
+	}
+
+	// Try other standard formats
 	for _, format := range formats {
 		if t, err := time.Parse(format, dateStr); err == nil {
 			return t
 		}
 	}
 
-	// If all parsing fails, return current time
-	log.Printf("Failed to parse date: %s", dateStr)
+	// If all parsing fails, return current time but don't log common invalid dates
+	if dateStr != "" && dateStr != "0000-00-00 00:00:00" {
+		log.Printf("Failed to parse date: %s", dateStr)
+	}
 	return time.Now()
 }
 
@@ -627,7 +678,7 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
         
         <div class="news-grid">
             {{$sources := dict "TOI" "Times of India" "TH" "The Hindu" "BL" "Business Line" "LM" "LiveMint" "ZP" "Zerodha Pulse" "NSE_IT" "NSE Insider Trading" "NSE_BB" "NSE Buy Back" "NSE_FR" "NSE Financial Results"}}
-            {{$sourceOrder := slice "TOI" "TH" "BL" "LM" "ZP" "NSE_IT" "NSE_BB" "NSE_FR"}}
+            {{$sourceOrder := slice "BS_MARKETS" "BS_NEWS" "BS_COMMODITIES" "BS_IPO" "BS_STOCK_MARKET" "BS_CRYPTO" "TOI" "TH" "BL" "LM" "ZP" "NSE_IT" "NSE_BB" "NSE_FR"}}
             
             {{range $sourceOrder}}
             {{$source := .}}
