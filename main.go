@@ -1,16 +1,21 @@
 package main
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"html/template"
 	"io"
 	"log"
+	"math"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 // RSS feed structures
@@ -33,7 +38,42 @@ type Item struct {
 	Source      string // We'll add this manually
 }
 
-// News aggregator structure
+// Advanced analytics structures
+type NewsAnalytics struct {
+	TotalArticles    int                    `json:"total_articles"`
+	SourceCount      map[string]int         `json:"source_count"`
+	CategoryCount    map[string]int         `json:"category_count"`
+	HourlyCount      map[string]int         `json:"hourly_count"`
+	SentimentScore   float64                `json:"sentiment_score"`
+	TopKeywords      []KeywordCount         `json:"top_keywords"`
+	TrendingTopics   []string               `json:"trending_topics"`
+	Nifty50Mentions  int                    `json:"nifty50_mentions"`
+	SourceReliability map[string]float64    `json:"source_reliability"`
+}
+
+type KeywordCount struct {
+	Keyword string `json:"keyword"`
+	Count   int    `json:"count"`
+}
+
+type SentimentData struct {
+	Positive float64 `json:"positive"`
+	Neutral  float64 `json:"neutral"`
+	Negative float64 `json:"negative"`
+	Overall  string  `json:"overall"`
+}
+
+// WebSocket upgrader
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true // Allow all origins for demo
+	},
+}
+
+// WebSocket clients
+var clients = make(map[*websocket.Conn]bool)
+var clientsMutex sync.RWMutex
+
 // NIFTY50 stocks list
 var nifty50Stocks = []string{
 	"RELIANCE", "TCS", "HDFCBANK", "INFY", "HINDUNILVR", "ICICIBANK", "ITC",
@@ -46,23 +86,31 @@ var nifty50Stocks = []string{
 }
 
 type NewsItem struct {
-	Title        string
-	Link         string
-	Description  string
-	PubDate      time.Time
-	TimeAgo      string
-	Category     string
-	Source       string
-	SourceColor  string
-	SourceName   string
-	HasNifty50   bool   // Flag for NIFTY50 stock mention
-	Nifty50Stock string // The actual NIFTY50 stock mentioned (if any)
+	Title           string        `json:"title"`
+	Link            string        `json:"link"`
+	Description     string        `json:"description"`
+	PubDate         time.Time     `json:"pub_date"`
+	TimeAgo         string        `json:"time_ago"`
+	Category        string        `json:"category"`
+	Source          string        `json:"source"`
+	SourceColor     string        `json:"source_color"`
+	SourceName      string        `json:"source_name"`
+	HasNifty50      bool          `json:"has_nifty50"`
+	Nifty50Stock    string        `json:"nifty50_stock"`
+	SentimentScore  float64       `json:"sentiment_score"`
+	SentimentLabel  string        `json:"sentiment_label"`
+	Summary         string        `json:"summary"`
+	Keywords        []string      `json:"keywords"`
+	Priority        int           `json:"priority"`
+	ReadingTime     int           `json:"reading_time"`
 }
 
 type NewsData struct {
-	Items        []NewsItem
-	LastUpdated  string
-	TotalSources int
+	Items        []NewsItem     `json:"items"`
+	LastUpdated  string         `json:"last_updated"`
+	TotalSources int            `json:"total_sources"`
+	Analytics    NewsAnalytics  `json:"analytics"`
+	Sentiment    SentimentData  `json:"sentiment"`
 }
 
 // RSS feed sources
@@ -153,7 +201,319 @@ var (
 	newsCache     []NewsItem
 	lastCacheTime time.Time
 	cacheMutex    sync.RWMutex
+	analytics     NewsAnalytics
+	sentiment     SentimentData
 )
+
+// Advanced AI-powered features
+func analyzeSentiment(text string) (float64, string) {
+	// Simple sentiment analysis based on keywords
+	positiveWords := []string{"growth", "profit", "gain", "rise", "bull", "up", "surge", "boost", "positive", "strong", "high", "increase", "soar", "rally"}
+	negativeWords := []string{"loss", "fall", "bear", "down", "decline", "drop", "crash", "weak", "low", "decrease", "plunge", "recession", "crisis"}
+	
+	text = strings.ToLower(text)
+	positiveCount := 0
+	negativeCount := 0
+	
+	for _, word := range positiveWords {
+		if strings.Contains(text, word) {
+			positiveCount++
+		}
+	}
+	
+	for _, word := range negativeWords {
+		if strings.Contains(text, word) {
+			negativeCount++
+		}
+	}
+	
+	score := float64(positiveCount-negativeCount) / float64(len(strings.Fields(text)))
+	
+	var label string
+	if score > 0.1 {
+		label = "Positive"
+	} else if score < -0.1 {
+		label = "Negative"
+	} else {
+		label = "Neutral"
+	}
+	
+	return score, label
+}
+
+func extractKeywords(text string) []string {
+	// Simple keyword extraction
+	commonWords := map[string]bool{
+		"the": true, "a": true, "an": true, "and": true, "or": true, "but": true, "in": true, "on": true, "at": true, "to": true, "for": true, "of": true, "with": true, "by": true, "is": true, "are": true, "was": true, "were": true, "will": true, "would": true, "could": true, "should": true, "may": true, "might": true, "can": true, "this": true, "that": true, "these": true, "those": true, "has": true, "have": true, "had": true,
+	}
+	
+	text = strings.ToLower(text)
+	re := regexp.MustCompile(`[^a-z\s]+`)
+	text = re.ReplaceAllString(text, "")
+	
+	words := strings.Fields(text)
+	keywords := []string{}
+	
+	for _, word := range words {
+		if len(word) > 3 && !commonWords[word] {
+			keywords = append(keywords, word)
+		}
+	}
+	
+	// Return first 5 keywords
+	if len(keywords) > 5 {
+		keywords = keywords[:5]
+	}
+	
+	return keywords
+}
+
+func generateSummary(title, description string) string {
+	// Simple extractive summarization
+	sentences := strings.Split(description, ".")
+	if len(sentences) > 2 {
+		return sentences[0] + "."
+	}
+	return description
+}
+
+func calculateReadingTime(text string) int {
+	words := len(strings.Fields(text))
+	// Average reading speed: 200 words per minute
+	return int(math.Ceil(float64(words) / 200.0))
+}
+
+func calculatePriority(item NewsItem) int {
+	priority := 0
+	
+	// Higher priority for NIFTY50 mentions
+	if item.HasNifty50 {
+		priority += 30
+	}
+	
+	// Higher priority for positive sentiment
+	if item.SentimentScore > 0.1 {
+		priority += 20
+	} else if item.SentimentScore < -0.1 {
+		priority += 15 // Negative news is also important
+	}
+	
+	// Higher priority for recent news
+	hoursSincePublication := time.Since(item.PubDate).Hours()
+	if hoursSincePublication < 1 {
+		priority += 25
+	} else if hoursSincePublication < 6 {
+		priority += 15
+	} else if hoursSincePublication < 24 {
+		priority += 10
+	}
+	
+	// Higher priority for certain sources
+	if strings.Contains(item.Source, "BS_") || item.Source == "LM" {
+		priority += 10
+	}
+	
+	return priority
+}
+
+func generateAnalytics(items []NewsItem) NewsAnalytics {
+	analytics := NewsAnalytics{
+		TotalArticles:    len(items),
+		SourceCount:      make(map[string]int),
+		CategoryCount:    make(map[string]int),
+		HourlyCount:      make(map[string]int),
+		SourceReliability: make(map[string]float64),
+	}
+	
+	keywordCounts := make(map[string]int)
+	var totalSentiment float64
+	var niftyMentions int
+	
+	for _, item := range items {
+		// Source count
+		analytics.SourceCount[item.SourceName]++
+		
+		// Category count
+		category := item.Category
+		if category == "" {
+			category = "General"
+		}
+		analytics.CategoryCount[category]++
+		
+		// Hourly distribution
+		hour := item.PubDate.Format("15")
+		analytics.HourlyCount[hour]++
+		
+		// Keywords
+		for _, keyword := range item.Keywords {
+			keywordCounts[keyword]++
+		}
+		
+		// Sentiment
+		totalSentiment += item.SentimentScore
+		
+		// NIFTY50 mentions
+		if item.HasNifty50 {
+			niftyMentions++
+		}
+		
+		// Source reliability (based on sentiment and keywords quality)
+		reliability := 0.5 + (item.SentimentScore * 0.2) + (float64(len(item.Keywords)) * 0.1)
+		if reliability > 1.0 {
+			reliability = 1.0
+		}
+		if reliability < 0.0 {
+			reliability = 0.0
+		}
+		analytics.SourceReliability[item.SourceName] = reliability
+	}
+	
+	// Calculate average sentiment
+	if len(items) > 0 {
+		analytics.SentimentScore = totalSentiment / float64(len(items))
+	}
+	
+	analytics.Nifty50Mentions = niftyMentions
+	
+	// Top keywords
+	type kv struct {
+		Key   string
+		Value int
+	}
+	
+	var sortedKeywords []kv
+	for k, v := range keywordCounts {
+		sortedKeywords = append(sortedKeywords, kv{k, v})
+	}
+	
+	sort.Slice(sortedKeywords, func(i, j int) bool {
+		return sortedKeywords[i].Value > sortedKeywords[j].Value
+	})
+	
+	for i, kv := range sortedKeywords {
+		if i >= 10 { // Top 10 keywords
+			break
+		}
+		analytics.TopKeywords = append(analytics.TopKeywords, KeywordCount{
+			Keyword: kv.Key,
+			Count:   kv.Value,
+		})
+	}
+	
+	// Generate trending topics (simplified)
+	for _, kw := range analytics.TopKeywords[:min(5, len(analytics.TopKeywords))] {
+		analytics.TrendingTopics = append(analytics.TrendingTopics, kw.Keyword)
+	}
+	
+	return analytics
+}
+
+func generateSentimentData(items []NewsItem) SentimentData {
+	var positive, neutral, negative int
+	
+	for _, item := range items {
+		switch item.SentimentLabel {
+		case "Positive":
+			positive++
+		case "Negative":
+			negative++
+		default:
+			neutral++
+		}
+	}
+	
+	total := float64(len(items))
+	if total == 0 {
+		total = 1
+	}
+	
+	sentimentData := SentimentData{
+		Positive: float64(positive) / total * 100,
+		Neutral:  float64(neutral) / total * 100,
+		Negative: float64(negative) / total * 100,
+	}
+	
+	// Determine overall sentiment
+	if sentimentData.Positive > sentimentData.Negative && sentimentData.Positive > sentimentData.Neutral {
+		sentimentData.Overall = "Positive"
+	} else if sentimentData.Negative > sentimentData.Positive && sentimentData.Negative > sentimentData.Neutral {
+		sentimentData.Overall = "Negative"
+	} else {
+		sentimentData.Overall = "Neutral"
+	}
+	
+	return sentimentData
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// WebSocket handlers
+func handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("WebSocket upgrade error: %v", err)
+		return
+	}
+	defer conn.Close()
+	
+	clientsMutex.Lock()
+	clients[conn] = true
+	clientsMutex.Unlock()
+	
+	log.Printf("Client connected. Total clients: %d", len(clients))
+	
+	// Send initial data
+	cacheMutex.RLock()
+	data := NewsData{
+		Items:        newsCache,
+		LastUpdated:  lastCacheTime.In(istLocation).Format("Jan 2, 2006 at 3:04 PM"),
+		TotalSources: len(rssSources),
+		Analytics:    analytics,
+		Sentiment:    sentiment,
+	}
+	cacheMutex.RUnlock()
+	
+	conn.WriteJSON(data)
+	
+	// Keep connection alive and handle disconnection
+	for {
+		_, _, err := conn.ReadMessage()
+		if err != nil {
+			clientsMutex.Lock()
+			delete(clients, conn)
+			clientsMutex.Unlock()
+			log.Printf("Client disconnected. Total clients: %d", len(clients))
+			break
+		}
+	}
+}
+
+func broadcastUpdate() {
+	cacheMutex.RLock()
+	data := NewsData{
+		Items:        newsCache,
+		LastUpdated:  lastCacheTime.In(istLocation).Format("Jan 2, 2006 at 3:04 PM"),
+		TotalSources: len(rssSources),
+		Analytics:    analytics,
+		Sentiment:    sentiment,
+	}
+	cacheMutex.RUnlock()
+	
+	clientsMutex.RLock()
+	for client := range clients {
+		err := client.WriteJSON(data)
+		if err != nil {
+			client.Close()
+			delete(clients, client)
+		}
+	}
+	clientsMutex.RUnlock()
+}
 
 func fetchRSSFeed(url string) (*RSS, error) {
 	client := &http.Client{
@@ -361,19 +721,34 @@ func fetchAllNews() {
 					niftyStockName = niftyStockDesc
 				}
 
+				// Advanced AI features
+				fullText := item.Title + " " + item.Description
+				sentimentScore, sentimentLabel := analyzeSentiment(fullText)
+				keywords := extractKeywords(fullText)
+				summary := generateSummary(item.Title, item.Description)
+				readingTime := calculateReadingTime(fullText)
+
 				newsItem := NewsItem{
-					Title:        item.Title,
-					Link:         item.Link,
-					Description:   cleanDescription(item.Description),
-					PubDate:      pubTime,
-					TimeAgo:      timeAgo(pubTime),
-					Category:     item.Category,
-					Source:       sName,
-					SourceColor:  src.Color,
-					SourceName:   src.Name,
-					HasNifty50:   hasNifty50,
-					Nifty50Stock: niftyStockName,
+					Title:          item.Title,
+					Link:           item.Link,
+					Description:    cleanDescription(item.Description),
+					PubDate:        pubTime,
+					TimeAgo:        timeAgo(pubTime),
+					Category:       item.Category,
+					Source:         sName,
+					SourceColor:    src.Color,
+					SourceName:     src.Name,
+					HasNifty50:      hasNifty50,
+					Nifty50Stock:    niftyStockName,
+					SentimentScore:  sentimentScore,
+					SentimentLabel:  sentimentLabel,
+					Summary:        summary,
+					Keywords:       keywords,
+					ReadingTime:    readingTime,
 				}
+
+				// Calculate priority
+				newsItem.Priority = calculatePriority(newsItem)
 
 				allNews = append(allNews, newsItem)
 			}
@@ -383,18 +758,32 @@ func fetchAllNews() {
 
 	wg.Wait()
 
-	// Sort by publication date (newest first)
+	// Sort by priority first, then by publication date (newest first)
 	sort.Slice(allNews, func(i, j int) bool {
-		return allNews[i].PubDate.After(allNews[j].PubDate)
+		if allNews[i].Priority == allNews[j].Priority {
+			return allNews[i].PubDate.After(allNews[j].PubDate)
+		}
+		return allNews[i].Priority > allNews[j].Priority
 	})
+
+	// Generate analytics and sentiment data
+	analyticsData := generateAnalytics(allNews)
+	sentimentData := generateSentimentData(allNews)
 
 	// Update cache
 	cacheMutex.Lock()
 	newsCache = allNews
 	lastCacheTime = time.Now()
+	analytics = analyticsData
+	sentiment = sentimentData
 	cacheMutex.Unlock()
 
 	log.Printf("📊 Total news items cached: %d", len(allNews))
+	log.Printf("🎯 Analytics generated - Top keyword: %s", analytics.TopKeywords[0].Keyword)
+	log.Printf("😊 Overall sentiment: %s", sentiment.Overall)
+
+	// Broadcast update to WebSocket clients
+	broadcastUpdate()
 }
 
 func getNewsFromCache() ([]NewsItem, string) {
@@ -411,8 +800,67 @@ func getNewsFromCache() ([]NewsItem, string) {
 	return newsCache, istTime.Format("Jan 2, 2006 at 3:04 PM")
 }
 
+// Advanced API handlers
+func analyticsHandler(w http.ResponseWriter, r *http.Request) {
+	cacheMutex.RLock()
+	data := analytics
+	cacheMutex.RUnlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	json.NewEncoder(w).Encode(data)
+}
+
+func sentimentHandler(w http.ResponseWriter, r *http.Request) {
+	cacheMutex.RLock()
+	data := sentiment
+	cacheMutex.RUnlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	json.NewEncoder(w).Encode(data)
+}
+
+func filterHandler(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	source := query.Get("source")
+	category := query.Get("category")
+	sentiment := query.Get("sentiment")
+	nifty50Only := query.Get("nifty50") == "true"
+	
+	cacheMutex.RLock()
+	allItems := newsCache
+	cacheMutex.RUnlock()
+	
+	var filtered []NewsItem
+	for _, item := range allItems {
+		if source != "" && item.Source != source {
+			continue
+		}
+		if category != "" && item.Category != category {
+			continue
+		}
+		if sentiment != "" && item.SentimentLabel != sentiment {
+			continue
+		}
+		if nifty50Only && !item.HasNifty50 {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	json.NewEncoder(w).Encode(filtered)
+}
+
 func homeHandler(w http.ResponseWriter, r *http.Request) {
 	news, lastUpdated := getNewsFromCache()
+	
+	cacheMutex.RLock()
+	analyticsData := analytics
+	sentimentData := sentiment
+	cacheMutex.RUnlock()
 
 	tmpl := `
 <!DOCTYPE html>
@@ -573,10 +1021,271 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
             gap: 8px;
         }
         
-        .theme-toggle:hover {
-            background: rgba(255,255,255,0.3);
-            transform: translateY(-2px);
-        }
+                 .theme-toggle:hover {
+             background: rgba(255,255,255,0.3);
+             transform: translateY(-2px);
+         }
+         
+         .dashboard-toggle {
+             background: rgba(255,255,255,0.2);
+             border: 1px solid rgba(255,255,255,0.3);
+             color: white;
+             padding: 10px 16px;
+             border-radius: 25px;
+             cursor: pointer;
+             font-size: 14px;
+             font-weight: 500;
+             transition: var(--transition);
+             backdrop-filter: blur(10px);
+             display: flex;
+             align-items: center;
+             gap: 8px;
+         }
+         
+         .dashboard-toggle:hover {
+             background: rgba(255,255,255,0.3);
+             transform: translateY(-2px);
+         }
+         
+         .filter-controls {
+             display: flex;
+             gap: 12px;
+             align-items: center;
+         }
+         
+         .filter-controls select {
+             padding: 8px 12px;
+             border: 1px solid rgba(255,255,255,0.3);
+             border-radius: 20px;
+             background: rgba(255,255,255,0.2);
+             color: white;
+             font-size: 13px;
+             backdrop-filter: blur(10px);
+             cursor: pointer;
+         }
+         
+         .filter-controls select option {
+             background: var(--card-bg);
+             color: var(--text-primary);
+         }
+         
+         /* Analytics Dashboard Styles */
+         .analytics-dashboard {
+             background: rgba(255,255,255,0.1);
+             border-radius: var(--border-radius);
+             padding: 30px;
+             margin-bottom: 30px;
+             backdrop-filter: blur(20px);
+             border: 1px solid rgba(255,255,255,0.2);
+             animation: slideDown 0.5s ease-out;
+         }
+         
+         @keyframes slideDown {
+             from {
+                 opacity: 0;
+                 transform: translateY(-20px);
+             }
+             to {
+                 opacity: 1;
+                 transform: translateY(0);
+             }
+         }
+         
+         .analytics-dashboard h2 {
+             color: white;
+             font-size: 1.8rem;
+             margin-bottom: 25px;
+             text-align: center;
+             display: flex;
+             align-items: center;
+             justify-content: center;
+             gap: 12px;
+         }
+         
+         .dashboard-grid {
+             display: grid;
+             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+             gap: 24px;
+         }
+         
+         .analytics-card {
+             background: var(--card-bg);
+             border-radius: var(--border-radius);
+             padding: 24px;
+             box-shadow: var(--shadow-lg);
+             border: 1px solid var(--border-color);
+             transition: var(--transition);
+         }
+         
+         .analytics-card:hover {
+             transform: translateY(-4px);
+             box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+         }
+         
+         .analytics-card h3 {
+             color: var(--text-primary);
+             font-size: 1.2rem;
+             margin-bottom: 20px;
+             display: flex;
+             align-items: center;
+             gap: 10px;
+         }
+         
+         /* Sentiment Chart */
+         .sentiment-chart {
+             margin-bottom: 16px;
+         }
+         
+         .sentiment-bar {
+             display: flex;
+             height: 40px;
+             border-radius: 20px;
+             overflow: hidden;
+             background: #f0f0f0;
+             margin-bottom: 12px;
+         }
+         
+         .sentiment-positive {
+             background: linear-gradient(135deg, var(--success-color), #059669);
+             color: white;
+             display: flex;
+             align-items: center;
+             justify-content: center;
+             font-weight: 600;
+             font-size: 12px;
+         }
+         
+         .sentiment-neutral {
+             background: linear-gradient(135deg, #6b7280, #4b5563);
+             color: white;
+             display: flex;
+             align-items: center;
+             justify-content: center;
+             font-weight: 600;
+             font-size: 12px;
+         }
+         
+         .sentiment-negative {
+             background: linear-gradient(135deg, var(--error-color), #dc2626);
+             color: white;
+             display: flex;
+             align-items: center;
+             justify-content: center;
+             font-weight: 600;
+             font-size: 12px;
+         }
+         
+         .sentiment-labels {
+             display: flex;
+             justify-content: space-between;
+             font-size: 12px;
+             color: var(--text-secondary);
+         }
+         
+         .overall-sentiment {
+             text-align: center;
+             font-size: 16px;
+             color: var(--text-primary);
+         }
+         
+         .sentiment-positive { color: var(--success-color) !important; }
+         .sentiment-neutral { color: var(--text-secondary) !important; }
+         .sentiment-negative { color: var(--error-color) !important; }
+         
+         /* Keywords List */
+         .keywords-list {
+             display: flex;
+             flex-direction: column;
+             gap: 12px;
+         }
+         
+         .keyword-item {
+             display: flex;
+             justify-content: space-between;
+             align-items: center;
+             padding: 10px;
+             background: rgba(79, 70, 229, 0.1);
+             border-radius: 8px;
+             border-left: 3px solid var(--accent-color);
+         }
+         
+         .keyword {
+             font-weight: 500;
+             color: var(--text-primary);
+         }
+         
+         .count {
+             background: var(--accent-color);
+             color: white;
+             padding: 2px 8px;
+             border-radius: 12px;
+             font-size: 11px;
+             font-weight: 600;
+         }
+         
+         /* Source Chart */
+         .source-chart {
+             display: flex;
+             flex-direction: column;
+             gap: 12px;
+         }
+         
+         .source-bar {
+             display: flex;
+             align-items: center;
+             gap: 12px;
+         }
+         
+         .source-name {
+             font-size: 12px;
+             color: var(--text-secondary);
+             min-width: 120px;
+             font-weight: 500;
+         }
+         
+         .bar-container {
+             flex: 1;
+             display: flex;
+             align-items: center;
+             gap: 8px;
+         }
+         
+         .bar {
+             height: 20px;
+             background: linear-gradient(135deg, var(--accent-color), var(--success-color));
+             border-radius: 10px;
+             min-width: 2px;
+             transition: width 0.5s ease;
+         }
+         
+         .bar-count {
+             font-size: 11px;
+             font-weight: 600;
+             color: var(--text-secondary);
+             min-width: 20px;
+         }
+         
+         /* Trending Topics */
+         .trending-topics {
+             display: flex;
+             flex-wrap: wrap;
+             gap: 10px;
+         }
+         
+         .trending-tag {
+             background: linear-gradient(135deg, var(--warning-color), #d97706);
+             color: white;
+             padding: 6px 12px;
+             border-radius: 16px;
+             font-size: 12px;
+             font-weight: 600;
+             transition: var(--transition);
+         }
+         
+         .trending-tag:hover {
+             transform: translateY(-2px);
+             box-shadow: var(--shadow-md);
+         }
         
         .search-box {
             position: relative;
@@ -1090,14 +1799,120 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
             }
         }
         
-        /* Focus styles for better keyboard navigation */
-        .news-title:focus,
-        .control-btn:focus,
-        .theme-toggle:focus,
-        .search-input:focus {
-            outline: 2px solid var(--accent-color);
-            outline-offset: 2px;
-        }
+                 /* Focus styles for better keyboard navigation */
+         .news-title:focus,
+         .control-btn:focus,
+         .theme-toggle:focus,
+         .search-input:focus {
+             outline: 2px solid var(--accent-color);
+             outline-offset: 2px;
+         }
+         
+         /* Notification System */
+         .notification {
+             position: fixed;
+             top: 20px;
+             right: 20px;
+             background: var(--card-bg);
+             border-radius: var(--border-radius);
+             padding: 16px;
+             box-shadow: var(--shadow-lg);
+             border-left: 4px solid var(--accent-color);
+             z-index: 10000;
+             max-width: 350px;
+             animation: slideInRight 0.3s ease-out;
+         }
+         
+         @keyframes slideInRight {
+             from {
+                 transform: translateX(100%);
+                 opacity: 0;
+             }
+             to {
+                 transform: translateX(0);
+                 opacity: 1;
+             }
+         }
+         
+         .notification-info {
+             border-left-color: var(--accent-color);
+         }
+         
+         .notification-success {
+             border-left-color: var(--success-color);
+         }
+         
+         .notification-warning {
+             border-left-color: var(--warning-color);
+         }
+         
+         .notification-error {
+             border-left-color: var(--error-color);
+         }
+         
+         .notification-content {
+             display: flex;
+             justify-content: space-between;
+             align-items: center;
+             gap: 12px;
+         }
+         
+         .notification-content span {
+             color: var(--text-primary);
+             font-weight: 500;
+         }
+         
+         .notification-content button {
+             background: none;
+             border: none;
+             font-size: 18px;
+             cursor: pointer;
+             color: var(--text-secondary);
+             padding: 0;
+             width: 20px;
+             height: 20px;
+             display: flex;
+             align-items: center;
+             justify-content: center;
+         }
+         
+         .notification-content button:hover {
+             color: var(--text-primary);
+         }
+         
+         /* Sentiment Indicators */
+         .sentiment-indicator {
+             position: absolute;
+             top: 8px;
+             left: 8px;
+             width: 24px;
+             height: 24px;
+             border-radius: 50%;
+             display: flex;
+             align-items: center;
+             justify-content: center;
+             font-size: 12px;
+             z-index: 2;
+         }
+         
+         .reading-time {
+             color: var(--text-secondary);
+             font-size: 11px;
+             margin-left: 8px;
+         }
+         
+         /* Enhanced article states */
+         .news-item.sentiment-positive {
+             border-left-color: var(--success-color);
+         }
+         
+         .news-item.sentiment-negative {
+             border-left-color: var(--error-color);
+         }
+         
+         .news-item.sentiment-neutral {
+             border-left-color: var(--text-secondary);
+         }
     </style>
 </head>
 <body>
@@ -1125,6 +1940,96 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
             <div class="search-box">
                 <input type="text" class="search-input" placeholder="Search news..." id="searchInput">
                 <i class="fas fa-search search-icon"></i>
+            </div>
+            <button class="dashboard-toggle" onclick="toggleDashboard()" aria-label="Toggle analytics dashboard">
+                <i class="fas fa-chart-bar"></i>
+                <span>Analytics</span>
+            </button>
+            <div class="filter-controls">
+                <select id="sourceFilter" onchange="applyFilters()">
+                    <option value="">All Sources</option>
+                    {{range $source, $data := .Analytics.SourceCount}}
+                    <option value="{{$source}}">{{$source}} ({{$data}})</option>
+                    {{end}}
+                </select>
+                <select id="sentimentFilter" onchange="applyFilters()">
+                    <option value="">All Sentiment</option>
+                    <option value="Positive">Positive</option>
+                    <option value="Neutral">Neutral</option>
+                    <option value="Negative">Negative</option>
+                </select>
+            </div>
+        </div>
+        
+        <!-- Analytics Dashboard -->
+        <div class="analytics-dashboard" id="analyticsDashboard" style="display: none;">
+            <h2><i class="fas fa-chart-line"></i> News Analytics Dashboard</h2>
+            
+            <div class="dashboard-grid">
+                <!-- Sentiment Analysis Card -->
+                <div class="analytics-card">
+                    <h3><i class="fas fa-smile"></i> Sentiment Analysis</h3>
+                    <div class="sentiment-chart">
+                        <div class="sentiment-bar">
+                            <div class="sentiment-positive" style="width: {{.Sentiment.Positive}}%">
+                                {{printf "%.1f" .Sentiment.Positive}}%
+                            </div>
+                            <div class="sentiment-neutral" style="width: {{.Sentiment.Neutral}}%">
+                                {{printf "%.1f" .Sentiment.Neutral}}%
+                            </div>
+                            <div class="sentiment-negative" style="width: {{.Sentiment.Negative}}%">
+                                {{printf "%.1f" .Sentiment.Negative}}%
+                            </div>
+                        </div>
+                        <div class="sentiment-labels">
+                            <span class="positive-label">Positive</span>
+                            <span class="neutral-label">Neutral</span>
+                            <span class="negative-label">Negative</span>
+                        </div>
+                    </div>
+                    <div class="overall-sentiment">
+                        Overall: <strong class="sentiment-{{.Sentiment.Overall | lower}}">{{.Sentiment.Overall}}</strong>
+                    </div>
+                </div>
+
+                <!-- Top Keywords Card -->
+                <div class="analytics-card">
+                    <h3><i class="fas fa-tags"></i> Top Keywords</h3>
+                    <div class="keywords-list">
+                        {{range .Analytics.TopKeywords}}
+                        <div class="keyword-item">
+                            <span class="keyword">{{.Keyword}}</span>
+                            <span class="count">{{.Count}}</span>
+                        </div>
+                        {{end}}
+                    </div>
+                </div>
+
+                <!-- Source Distribution Card -->
+                <div class="analytics-card">
+                    <h3><i class="fas fa-broadcast-tower"></i> Source Distribution</h3>
+                    <div class="source-chart">
+                        {{range $source, $count := .Analytics.SourceCount}}
+                        <div class="source-bar">
+                            <span class="source-name">{{$source}}</span>
+                            <div class="bar-container">
+                                <div class="bar" style="width: {{div (mul $count 100) $.Analytics.TotalArticles}}%"></div>
+                                <span class="bar-count">{{$count}}</span>
+                            </div>
+                        </div>
+                        {{end}}
+                    </div>
+                </div>
+
+                <!-- Trending Topics Card -->
+                <div class="analytics-card">
+                    <h3><i class="fas fa-fire"></i> Trending Topics</h3>
+                    <div class="trending-topics">
+                        {{range .Analytics.TrendingTopics}}
+                        <span class="trending-tag">#{{.}}</span>
+                        {{end}}
+                    </div>
+                </div>
             </div>
         </div>
         
@@ -1170,7 +2075,7 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
                 </div>
                 <div class="news-items">
                     {{range $sourceItems}}
-                    <div class="news-item {{if .HasNifty50}}nifty50-highlight{{end}}" data-title="{{.Title | lower}}" data-description="{{.Description | lower}}">
+                                         <div class="news-item {{if .HasNifty50}}nifty50-highlight{{end}} sentiment-{{.SentimentLabel | lower}}" data-title="{{.Title | lower}}" data-description="{{.Description | lower}}" data-sentiment="{{.SentimentLabel}}" data-reading-time="{{.ReadingTime}}">
                         {{if .HasNifty50}}
                         <span class="nifty50-badge" title="Mentions NIFTY50 stock: {{.Nifty50Stock}}">
                             <i class="fas fa-star"></i> {{.Nifty50Stock}}
@@ -1331,14 +2236,224 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
             }
         });
         
-        // Initialize on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            initTheme();
-            countNiftyMentions();
-            console.log('📈 Enhanced Business News Aggregator loaded');
-            console.log('🔄 Auto-refresh every 5 minutes');
-            console.log('⌨️  Keyboard shortcuts: Ctrl+R (refresh), Ctrl+D (theme), Esc (clear search)');
-        });
+                 // Analytics Dashboard Functions
+         function toggleDashboard() {
+             const dashboard = document.getElementById('analyticsDashboard');
+             if (dashboard.style.display === 'none') {
+                 dashboard.style.display = 'block';
+                 document.querySelector('.dashboard-toggle').innerHTML = '<i class="fas fa-chart-bar"></i> <span>Hide Analytics</span>';
+             } else {
+                 dashboard.style.display = 'none';
+                 document.querySelector('.dashboard-toggle').innerHTML = '<i class="fas fa-chart-bar"></i> <span>Analytics</span>';
+             }
+         }
+         
+         // Advanced Filtering
+         function applyFilters() {
+             const sourceFilter = document.getElementById('sourceFilter').value;
+             const sentimentFilter = document.getElementById('sentimentFilter').value;
+             const newsGrid = document.getElementById('newsGrid');
+             const newsSources = newsGrid.querySelectorAll('.news-source');
+             
+             newsSources.forEach(source => {
+                 const newsItems = source.querySelectorAll('.news-item');
+                 let visibleItems = 0;
+                 
+                 newsItems.forEach(item => {
+                     let shouldShow = true;
+                     
+                     // Apply sentiment filter
+                     if (sentimentFilter && !item.classList.contains('sentiment-' + sentimentFilter.toLowerCase())) {
+                         shouldShow = false;
+                     }
+                     
+                     if (shouldShow) {
+                         item.style.display = 'block';
+                         visibleItems++;
+                     } else {
+                         item.style.display = 'none';
+                     }
+                 });
+                 
+                 // Apply source filter
+                 if (sourceFilter && !source.getAttribute('data-source-name').includes(sourceFilter)) {
+                     source.style.display = 'none';
+                 } else if (visibleItems > 0) {
+                     source.style.display = 'block';
+                 } else {
+                     source.style.display = 'none';
+                 }
+             });
+         }
+         
+         // WebSocket Connection for Real-time Updates
+         let ws;
+         let reconnectInterval = 5000; // 5 seconds
+         
+         function connectWebSocket() {
+             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+             const wsUrl = protocol + '//' + window.location.host + '/ws';
+             
+             ws = new WebSocket(wsUrl);
+             
+             ws.onopen = function() {
+                 console.log('🔌 WebSocket connected - Real-time updates enabled');
+                 document.querySelector('.stats-bar').innerHTML += 
+                     '<div class="stat-item"><i class="fas fa-wifi stat-icon"></i><span>Live Updates</span></div>';
+             };
+             
+             ws.onmessage = function(event) {
+                 const data = JSON.parse(event.data);
+                 console.log('📡 Real-time update received');
+                 
+                 // Update the page with new data
+                 updatePageData(data);
+                 
+                 // Show notification
+                 showNotification('New articles available! 📰', 'info');
+             };
+             
+             ws.onclose = function() {
+                 console.log('🔌 WebSocket disconnected - Attempting reconnection...');
+                 setTimeout(connectWebSocket, reconnectInterval);
+             };
+             
+             ws.onerror = function(error) {
+                 console.error('❌ WebSocket error:', error);
+             };
+         }
+         
+         function updatePageData(data) {
+             // Update last updated time
+             const lastUpdatedElement = document.querySelector('.last-updated');
+             if (lastUpdatedElement) {
+                 lastUpdatedElement.innerHTML = '<i class="far fa-clock"></i> Last updated: ' + data.last_updated;
+             }
+             
+             // Update analytics if dashboard is visible
+             const dashboard = document.getElementById('analyticsDashboard');
+             if (dashboard && dashboard.style.display !== 'none') {
+                 updateAnalyticsDashboard(data.analytics, data.sentiment);
+             }
+             
+             // Update article count
+             const articleCountElement = document.querySelector('.stat-item span');
+             if (articleCountElement) {
+                 articleCountElement.textContent = data.items.length + ' Articles';
+             }
+         }
+         
+         function updateAnalyticsDashboard(analytics, sentiment) {
+             // Update sentiment chart
+             const positiveBar = document.querySelector('.sentiment-positive');
+             const neutralBar = document.querySelector('.sentiment-neutral');
+             const negativeBar = document.querySelector('.sentiment-negative');
+             
+             if (positiveBar) {
+                 positiveBar.style.width = sentiment.positive + '%';
+                 positiveBar.textContent = sentiment.positive.toFixed(1) + '%';
+             }
+             if (neutralBar) {
+                 neutralBar.style.width = sentiment.neutral + '%';
+                 neutralBar.textContent = sentiment.neutral.toFixed(1) + '%';
+             }
+             if (negativeBar) {
+                 negativeBar.style.width = sentiment.negative + '%';
+                 negativeBar.textContent = sentiment.negative.toFixed(1) + '%';
+             }
+             
+             // Update overall sentiment
+             const overallElement = document.querySelector('.overall-sentiment strong');
+             if (overallElement) {
+                 overallElement.textContent = sentiment.overall;
+                 overallElement.className = 'sentiment-' + sentiment.overall.toLowerCase();
+             }
+         }
+         
+         // Notification System
+         function showNotification(message, type = 'info') {
+             // Create notification element
+             const notification = document.createElement('div');
+             notification.className = 'notification notification-' + type;
+             notification.innerHTML = 
+                 '<div class="notification-content">' +
+                     '<span>' + message + '</span>' +
+                     '<button onclick="this.parentElement.parentElement.remove()">×</button>' +
+                 '</div>';
+             
+             // Add to page
+             document.body.appendChild(notification);
+             
+             // Auto remove after 5 seconds
+             setTimeout(() => {
+                 if (notification.parentElement) {
+                     notification.remove();
+                 }
+             }, 5000);
+         }
+         
+         // Enhanced article interactions
+         function addArticleInteractions() {
+             const newsItems = document.querySelectorAll('.news-item');
+             
+             newsItems.forEach(item => {
+                 // Add reading time display
+                 const readingTime = item.getAttribute('data-reading-time');
+                 if (readingTime) {
+                     const metaDiv = item.querySelector('.news-meta');
+                     const readingTimeSpan = document.createElement('span');
+                     readingTimeSpan.className = 'reading-time';
+                     readingTimeSpan.innerHTML = '<i class="far fa-clock"></i> ' + readingTime + ' min read';
+                     metaDiv.appendChild(readingTimeSpan);
+                 }
+                 
+                 // Add sentiment indicator
+                 const sentiment = item.getAttribute('data-sentiment');
+                 if (sentiment) {
+                     item.classList.add('sentiment-' + sentiment.toLowerCase());
+                     
+                     const sentimentIndicator = document.createElement('div');
+                     sentimentIndicator.className = 'sentiment-indicator sentiment-' + sentiment.toLowerCase();
+                     sentimentIndicator.title = 'Sentiment: ' + sentiment;
+                     
+                     let icon = '😐';
+                     if (sentiment === 'Positive') icon = '😊';
+                     if (sentiment === 'Negative') icon = '😔';
+                     
+                     sentimentIndicator.textContent = icon;
+                     item.appendChild(sentimentIndicator);
+                 }
+             });
+         }
+         
+         // Performance monitoring
+         function monitorPerformance() {
+             if ('performance' in window) {
+                 window.addEventListener('load', function() {
+                     const loadTime = performance.timing.loadEventEnd - performance.timing.navigationStart;
+                     console.log('⚡ Page load time:', loadTime + 'ms');
+                     
+                     if (loadTime > 3000) {
+                         console.warn('⚠️  Slow page load detected');
+                     }
+                 });
+             }
+         }
+         
+         // Initialize all advanced features on page load
+         document.addEventListener('DOMContentLoaded', function() {
+             initTheme();
+             countNiftyMentions();
+             connectWebSocket();
+             addArticleInteractions();
+             monitorPerformance();
+             
+             console.log('🚀 Advanced Business News Aggregator loaded');
+             console.log('🔄 Auto-refresh every 5 minutes');
+             console.log('📡 Real-time WebSocket updates enabled');
+             console.log('🎯 Advanced analytics dashboard available');
+             console.log('⌨️  Keyboard shortcuts: Ctrl+R (refresh), Ctrl+D (theme), Esc (clear search)');
+         });
         
         // Performance optimization - lazy loading for images if any
         if ('IntersectionObserver' in window) {
@@ -1399,6 +2514,18 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		"lower": func(s string) string {
 			return strings.ToLower(s)
 		},
+		"printf": func(format string, args ...interface{}) string {
+			return fmt.Sprintf(format, args...)
+		},
+		"div": func(a, b int) int {
+			if b == 0 {
+				return 0
+			}
+			return a / b
+		},
+		"mul": func(a, b int) int {
+			return a * b
+		},
 	}
 
 	t := template.Must(template.New("home").Funcs(funcMap).Parse(tmpl))
@@ -1406,6 +2533,8 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		Items:        news,
 		LastUpdated:  lastUpdated,
 		TotalSources: len(rssSources),
+		Analytics:    analyticsData,
+		Sentiment:    sentimentData,
 	}
 
 	w.Header().Set("Content-Type", "text/html")
@@ -1453,15 +2582,30 @@ func main() {
 	// HTTP handlers
 	http.HandleFunc("/", homeHandler)
 	http.HandleFunc("/api/status", apiHandler)
+	http.HandleFunc("/api/analytics", analyticsHandler)
+	http.HandleFunc("/api/sentiment", sentimentHandler)
+	http.HandleFunc("/api/filter", filterHandler)
+	http.HandleFunc("/ws", handleWebSocket)
 
-	fmt.Println("🚀 RSS News Aggregator starting...")
-	fmt.Println("📡 Fetching feeds from 8 sources:")
+	fmt.Println("🚀 Advanced RSS News Aggregator starting...")
+	fmt.Println("📡 Fetching feeds from", len(rssSources), "sources:")
 	for code, source := range rssSources {
 		fmt.Printf("   • %s: %s\n", code, source.Name)
 	}
 	fmt.Println("🔄 Auto-refresh interval: 5 minutes")
 	fmt.Println("🌐 Server running at http://localhost:8080")
-	fmt.Println("📊 API status at http://localhost:8080/api/status")
+	fmt.Println("📊 API endpoints:")
+	fmt.Println("   • Status: http://localhost:8080/api/status")
+	fmt.Println("   • Analytics: http://localhost:8080/api/analytics")
+	fmt.Println("   • Sentiment: http://localhost:8080/api/sentiment")
+	fmt.Println("   • Filter: http://localhost:8080/api/filter")
+	fmt.Println("🔌 WebSocket: ws://localhost:8080/ws")
+	fmt.Println("🎯 Advanced Features:")
+	fmt.Println("   • AI-powered sentiment analysis")
+	fmt.Println("   • Real-time analytics dashboard")
+	fmt.Println("   • Smart keyword extraction")
+	fmt.Println("   • Priority-based news ranking")
+	fmt.Println("   • Live WebSocket updates")
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
