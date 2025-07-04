@@ -2,21 +2,74 @@ version: '3.8'
 
 services:
   rss-aggregator:
-    build: .
-    container_name: rss-aggregator
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: rss-advanced-aggregator
     ports:
       - "8080:8080"
     restart: unless-stopped
+    
+    # Environment variables for memory-optimized real-time operation
     environment:
       - TZ=Asia/Kolkata
+      - GO_ENV=production
+      - RSS_REFRESH_INTERVAL=5m
+      - MAX_ARTICLES_PER_SOURCE=10
+      - MAX_TOTAL_ARTICLES=150
+      - MEMORY_CLEANUP_INTERVAL=1m
+      - WEBSOCKET_TIMEOUT=60s
+      
+    # Reduced resource limits for memory-optimized version
+    deploy:
+      resources:
+        limits:
+          memory: 128M      # Reduced from 256M
+          cpus: '0.3'       # Reduced from 0.5
+        reservations:
+          memory: 64M       # Reduced from 128M
+          cpus: '0.15'      # Reduced from 0.25
+    
+    # Enhanced health check testing multiple endpoints
     healthcheck:
-      test: ["CMD", "wget", "--spider", "http://localhost:8080"]
+      test: |
+        wget --no-verbose --tries=1 --spider http://localhost:8080/api/status &&
+        wget --no-verbose --tries=1 --spider http://localhost:8080/api/analytics &&
+        wget --no-verbose --tries=1 --spider http://localhost:8080/api/sentiment
       interval: 30s
-      timeout: 10s
+      timeout: 15s
       retries: 3
-      start_period: 5s
+      start_period: 10s
+      
+    # Logging configuration
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+        compress: "true"
+        
+    # Labels for better container management
+    labels:
+      - "app=rss-aggregator"
+      - "version=enhanced"
+      - "description=Advanced RSS News Aggregator with Analytics"
+      - "maintainer=your-team"
+      
+    # Network configuration for WebSocket support
+    networks:
+      - rss-network
+      
+    # Volume for potential future use (logs, cache, etc.)
+    volumes:
+      - rss-logs:/app/logs
+      
+# Networks
+networks:
+  rss-network:
+    driver: bridge
+    
+# Volumes  
+volumes:
+  rss-logs:
+    driver: local
