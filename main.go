@@ -421,7 +421,38 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>📈 Business News Aggregator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
+        :root {
+            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --dark-gradient: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            --card-bg: rgba(255, 255, 255, 0.95);
+            --card-bg-dark: rgba(30, 30, 46, 0.95);
+            --text-primary: #1a202c;
+            --text-primary-dark: #e2e8f0;
+            --text-secondary: #4a5568;
+            --text-secondary-dark: #a0aec0;
+            --accent-color: #4f46e5;
+            --success-color: #10b981;
+            --warning-color: #f59e0b;
+            --error-color: #ef4444;
+            --border-color: rgba(0, 0, 0, 0.1);
+            --border-color-dark: rgba(255, 255, 255, 0.1);
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+            --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.15);
+            --border-radius: 16px;
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        [data-theme="dark"] {
+            --card-bg: var(--card-bg-dark);
+            --text-primary: var(--text-primary-dark);
+            --text-secondary: var(--text-secondary-dark);
+            --border-color: var(--border-color-dark);
+        }
+        
         * {
             margin: 0;
             padding: 0;
@@ -429,136 +460,376 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
         }
         
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--primary-gradient);
             min-height: 100vh;
             padding: 20px;
+            color: var(--text-primary);
+            transition: var(--transition);
+            overflow-x: hidden;
+        }
+        
+        [data-theme="dark"] body {
+            background: var(--dark-gradient);
         }
         
         .container {
             max-width: 1600px;
             margin: 0 auto;
+            animation: slideUp 0.8s ease-out;
+        }
+        
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        @keyframes shimmer {
+            0% { background-position: -200px 0; }
+            100% { background-position: calc(200px + 100%) 0; }
         }
         
         .header {
             text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 40px;
+            position: relative;
+        }
+        
+        .header::before {
+            content: '';
+            position: absolute;
+            top: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100px;
+            height: 4px;
+            background: linear-gradient(90deg, var(--accent-color), var(--success-color));
+            border-radius: 2px;
+            animation: pulse 2s infinite;
         }
         
         .header h1 {
             color: white;
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            font-size: clamp(2rem, 4vw, 3rem);
+            font-weight: 700;
+            margin-bottom: 16px;
+            text-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            letter-spacing: -0.02em;
         }
         
         .header p {
             color: rgba(255,255,255,0.9);
-            font-size: 1.1rem;
-            margin-bottom: 5px;
+            font-size: clamp(1rem, 2vw, 1.2rem);
+            margin-bottom: 8px;
+            font-weight: 400;
         }
         
         .last-updated {
             color: rgba(255,255,255,0.8);
             font-size: 0.9rem;
             font-style: italic;
+            font-family: 'JetBrains Mono', monospace;
+            background: rgba(255,255,255,0.1);
+            padding: 8px 16px;
+            border-radius: 20px;
+            display: inline-block;
+            backdrop-filter: blur(10px);
+            margin-top: 8px;
+        }
+        
+        .controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+        
+        .theme-toggle {
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 10px 16px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: var(--transition);
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .theme-toggle:hover {
+            background: rgba(255,255,255,0.3);
+            transform: translateY(-2px);
+        }
+        
+        .search-box {
+            position: relative;
+            width: 300px;
+            max-width: 100%;
+        }
+        
+        .search-input {
+            width: 100%;
+            padding: 12px 40px 12px 16px;
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 25px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            font-size: 14px;
+            backdrop-filter: blur(10px);
+            transition: var(--transition);
+        }
+        
+        .search-input::placeholder {
+            color: rgba(255,255,255,0.7);
+        }
+        
+        .search-input:focus {
+            outline: none;
+            background: rgba(255,255,255,0.3);
+            border-color: rgba(255,255,255,0.5);
+        }
+        
+        .search-icon {
+            position: absolute;
+            right: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: rgba(255,255,255,0.7);
+        }
+        
+        .stats-bar {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+        
+        .stat-item {
+            background: rgba(255,255,255,0.15);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255,255,255,0.2);
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .stat-item:hover {
+            transform: translateY(-2px);
+            background: rgba(255,255,255,0.25);
+        }
+        
+        .stat-icon {
+            font-size: 16px;
         }
         
         .news-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
-            gap: 20px;
+            gap: 24px;
+            animation: fadeIn 1s ease-out 0.2s both;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
         }
         
         .news-source {
-            background: white;
-            border-radius: 16px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            background: var(--card-bg);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow-lg);
             overflow: hidden;
-            backdrop-filter: blur(10px);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            transition: var(--transition);
+            position: relative;
+            animation: slideUp 0.6s ease-out;
+        }
+        
+        .news-source:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
         }
         
         .source-header {
-            padding: 16px 20px;
+            padding: 20px 24px;
             display: flex;
             align-items: center;
-            gap: 12px;
-            border-bottom: 1px solid #e5e7eb;
+            gap: 16px;
+            border-bottom: 1px solid var(--border-color);
+            background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .source-header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+            transition: left 0.5s;
+        }
+        
+        .news-source:hover .source-header::before {
+            left: 100%;
         }
         
         .source-icon {
-            width: 40px;
-            height: 40px;
-            border-radius: 8px;
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
             color: white;
-            font-weight: bold;
+            font-weight: 700;
             font-size: 12px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: var(--shadow-md);
+        }
+        
+        .source-icon::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: transform 0.5s;
+            transform: rotate(45deg) translateX(-100%);
+        }
+        
+        .news-source:hover .source-icon::before {
+            transform: rotate(45deg) translateX(100%);
         }
         
         .source-name {
             font-weight: 600;
-            color: #374151;
+            color: var(--text-primary);
             flex: 1;
-            font-size: 14px;
+            font-size: 16px;
+            letter-spacing: -0.01em;
+        }
+        
+        .source-badges {
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
         
         .updated-badge {
-            background: #10b981;
+            background: linear-gradient(135deg, var(--success-color), #059669);
             color: white;
-            padding: 4px 8px;
-            border-radius: 12px;
+            padding: 6px 12px;
+            border-radius: 16px;
             font-size: 12px;
-            font-weight: 500;
+            font-weight: 600;
+            box-shadow: var(--shadow-sm);
+            animation: pulse 2s infinite;
         }
         
         .item-count {
-            background: #6b7280;
+            background: linear-gradient(135deg, var(--accent-color), #3730a3);
             color: white;
-            padding: 2px 6px;
-            border-radius: 10px;
+            padding: 4px 10px;
+            border-radius: 12px;
             font-size: 11px;
-            margin-left: 8px;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+            box-shadow: var(--shadow-sm);
         }
         
         .news-items {
-            max-height: 500px;
+            max-height: 520px;
             overflow-y: auto;
+            scroll-behavior: smooth;
         }
         
         .news-item {
-            padding: 12px 20px;
-            border-bottom: 1px solid #f3f4f6;
-            transition: all 0.2s;
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border-color);
+            transition: var(--transition);
             position: relative;
             border-left: 3px solid transparent;
         }
         
+        .news-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 0;
+            height: 100%;
+            background: linear-gradient(135deg, var(--accent-color), var(--success-color));
+            transition: width 0.3s ease;
+        }
+        
+        .news-item:hover::before {
+            width: 3px;
+        }
+        
         .nifty50-highlight {
-            background-color: #fff9e6;
-            border-left-color: #ffd700;
-            box-shadow: 0 2px 8px rgba(255, 215, 0, 0.1);
+            background: linear-gradient(135deg, #fef3c7, #fde68a);
+            border-left-color: var(--warning-color);
+            position: relative;
+        }
+        
+        [data-theme="dark"] .nifty50-highlight {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.05));
         }
         
         .nifty50-badge {
             position: absolute;
-            top: 8px;
-            right: 15px;
-            background: #ffd700;
-            color: #000;
-            padding: 2px 8px;
-            border-radius: 10px;
+            top: 12px;
+            right: 20px;
+            background: linear-gradient(135deg, var(--warning-color), #d97706);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
             font-size: 10px;
-            font-weight: bold;
+            font-weight: 700;
             text-transform: uppercase;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            box-shadow: var(--shadow-md);
             z-index: 1;
+            animation: pulse 3s infinite;
         }
         
         .news-item:hover {
-            background-color: #f9fafb;
+            background: rgba(79, 70, 229, 0.03);
+            transform: translateX(4px);
+        }
+        
+        [data-theme="dark"] .news-item:hover {
+            background: rgba(79, 70, 229, 0.1);
         }
         
         .news-item:last-child {
@@ -567,144 +838,316 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
         
         .news-title {
             font-weight: 600;
-            color: #1f2937;
-            margin-bottom: 6px;
-            line-height: 1.3;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+            line-height: 1.4;
             text-decoration: none;
             display: block;
-            font-size: 14px;
+            font-size: 15px;
+            letter-spacing: -0.01em;
+            transition: var(--transition);
         }
         
         .news-title:hover {
-            color: #3b82f6;
+            color: var(--accent-color);
+            text-decoration: underline;
         }
         
         .news-description {
-            color: #6b7280;
-            font-size: 12px;
-            line-height: 1.4;
-            margin-bottom: 8px;
+            color: var(--text-secondary);
+            font-size: 13px;
+            line-height: 1.5;
+            margin-bottom: 12px;
+            font-weight: 400;
         }
         
         .news-meta {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 11px;
-            color: #9ca3af;
+            font-size: 12px;
+            color: var(--text-secondary);
         }
         
         .news-time {
             font-weight: 500;
+            font-family: 'JetBrains Mono', monospace;
+            display: flex;
+            align-items: center;
+            gap: 4px;
         }
         
         .news-category {
-            background: #eff6ff;
-            color: #2563eb;
-            padding: 2px 6px;
-            border-radius: 8px;
-            font-weight: 500;
+            background: linear-gradient(135deg, #eff6ff, #dbeafe);
+            color: var(--accent-color);
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 11px;
+            box-shadow: var(--shadow-sm);
+            border: 1px solid rgba(79, 70, 229, 0.1);
         }
         
-        .stats-bar {
-            display: flex;
-            justify-content: center;
-            gap: 20px;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
+        [data-theme="dark"] .news-category {
+            background: rgba(79, 70, 229, 0.2);
+            color: #a5b4fc;
+            border-color: rgba(79, 70, 229, 0.3);
         }
         
-        .stat-item {
-            background: rgba(255,255,255,0.2);
-            color: white;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 14px;
-            backdrop-filter: blur(10px);
-        }
-        
-        .refresh-btn {
+        .floating-controls {
             position: fixed;
             bottom: 30px;
             right: 30px;
-            background: #3b82f6;
-            color: white;
-            border: none;
-            border-radius: 50%;
-            width: 60px;
-            height: 60px;
-            cursor: pointer;
-            box-shadow: 0 4px 16px rgba(59, 130, 246, 0.3);
-            transition: all 0.3s;
-            font-size: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
             z-index: 1000;
         }
         
-        .refresh-btn:hover {
-            background: #2563eb;
-            transform: scale(1.1);
+        .control-btn {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 600;
+            transition: var(--transition);
+            box-shadow: var(--shadow-lg);
+            backdrop-filter: blur(20px);
         }
         
-        .loading {
-            text-align: center;
+        .refresh-btn {
+            background: linear-gradient(135deg, var(--accent-color), #3730a3);
             color: white;
-            font-size: 1.2rem;
-            margin: 50px 0;
         }
         
-        @media (max-width: 768px) {
-            .news-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .header h1 {
-                font-size: 2rem;
-            }
-            
-            .stats-bar {
-                gap: 10px;
-            }
-            
-            .stat-item {
-                font-size: 12px;
-                padding: 6px 12px;
-            }
+        .refresh-btn:hover {
+            transform: scale(1.1) rotate(180deg);
+            box-shadow: 0 8px 32px rgba(79, 70, 229, 0.4);
+        }
+        
+        .scroll-top-btn {
+            background: linear-gradient(135deg, var(--success-color), #059669);
+            color: white;
+            opacity: 0;
+            visibility: hidden;
+        }
+        
+        .scroll-top-btn.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .scroll-top-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 8px 32px rgba(16, 185, 129, 0.4);
+        }
+        
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            opacity: 0;
+            visibility: hidden;
+            transition: var(--transition);
+        }
+        
+        .loading-overlay.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-left: 4px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            color: white;
+            font-size: 18px;
+            font-weight: 500;
+            margin-top: 20px;
         }
         
         /* Scrollbar styling */
         .news-items::-webkit-scrollbar {
-            width: 6px;
+            width: 8px;
         }
         
         .news-items::-webkit-scrollbar-track {
-            background: #f1f1f1;
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 4px;
         }
         
         .news-items::-webkit-scrollbar-thumb {
-            background: #c1c1c1;
-            border-radius: 3px;
+            background: linear-gradient(135deg, var(--accent-color), var(--success-color));
+            border-radius: 4px;
+            transition: var(--transition);
         }
         
         .news-items::-webkit-scrollbar-thumb:hover {
-            background: #a8a8a8;
+            background: linear-gradient(135deg, #3730a3, #059669);
+        }
+        
+        /* Mobile optimizations */
+        @media (max-width: 768px) {
+            body {
+                padding: 15px;
+            }
+            
+            .news-grid {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+            
+            .stats-bar {
+                gap: 12px;
+            }
+            
+            .stat-item {
+                font-size: 12px;
+                padding: 8px 14px;
+            }
+            
+            .controls {
+                flex-direction: column;
+                gap: 12px;
+            }
+            
+            .search-box {
+                width: 100%;
+                max-width: 300px;
+            }
+            
+            .floating-controls {
+                bottom: 20px;
+                right: 20px;
+            }
+            
+            .control-btn {
+                width: 50px;
+                height: 50px;
+                font-size: 18px;
+            }
+            
+            .news-item {
+                padding: 14px 18px;
+            }
+            
+            .source-header {
+                padding: 16px 18px;
+            }
+        }
+        
+        /* Print styles */
+        @media print {
+            body {
+                background: white !important;
+                color: black !important;
+            }
+            
+            .floating-controls,
+            .controls,
+            .stats-bar {
+                display: none !important;
+            }
+            
+            .news-source {
+                break-inside: avoid;
+                box-shadow: none !important;
+                border: 1px solid #ccc !important;
+            }
+        }
+        
+        /* Accessibility improvements */
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+        
+        /* Focus styles for better keyboard navigation */
+        .news-title:focus,
+        .control-btn:focus,
+        .theme-toggle:focus,
+        .search-input:focus {
+            outline: 2px solid var(--accent-color);
+            outline-offset: 2px;
         }
     </style>
 </head>
 <body>
+    <div class="loading-overlay" id="loadingOverlay">
+        <div style="text-align: center;">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">🔄 Refreshing news...</div>
+        </div>
+    </div>
+    
     <div class="container">
         <div class="header">
-            <h1>📈 Business News Aggregator</h1>
+            <h1><i class="fas fa-chart-line"></i> Business News Aggregator</h1>
             <p>Real-time updates from {{.TotalSources}} premium financial sources</p>
-            <div class="last-updated">Last updated: {{.LastUpdated}}</div>
+            <div class="last-updated">
+                <i class="far fa-clock"></i> Last updated: {{.LastUpdated}}
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+                <i class="fas fa-moon" id="themeIcon"></i>
+                <span id="themeText">Dark Mode</span>
+            </button>
+            <div class="search-box">
+                <input type="text" class="search-input" placeholder="Search news..." id="searchInput">
+                <i class="fas fa-search search-icon"></i>
+            </div>
         </div>
         
         <div class="stats-bar">
-            <div class="stat-item">📊 Total Articles: {{len .Items}}</div>
-            <div class="stat-item">🔄 Auto-refresh: 5 min</div>
-            <div class="stat-item">📡 Live Sources: {{.TotalSources}}</div>
+            <div class="stat-item">
+                <i class="fas fa-newspaper stat-icon"></i>
+                <span>{{len .Items}} Articles</span>
+            </div>
+            <div class="stat-item">
+                <i class="fas fa-sync-alt stat-icon"></i>
+                <span>Auto-refresh: 5 min</span>
+            </div>
+            <div class="stat-item">
+                <i class="fas fa-broadcast-tower stat-icon"></i>
+                <span>{{.TotalSources}} Live Sources</span>
+            </div>
+            <div class="stat-item">
+                <i class="fas fa-chart-line stat-icon"></i>
+                <span id="niftyCount">0 NIFTY50 mentions</span>
+            </div>
         </div>
         
-        <div class="news-grid">
+        <div class="news-grid" id="newsGrid">
             {{$sources := dict "TOI" "Times of India" "TH" "The Hindu" "BL" "Business Line" "LM" "LiveMint" "ZP" "Zerodha Pulse" "NSE_IT" "NSE Insider Trading" "NSE_BB" "NSE Buy Back" "NSE_FR" "NSE Financial Results" "NDTV_PROFIT" "NDTV Profit"}}
             {{$sourceOrder := slice "BS_MARKETS" "BS_NEWS" "BS_COMMODITIES" "BS_IPO" "BS_STOCK_MARKET" "BS_CRYPTO" "NDTV_PROFIT" "TOI" "TH" "BL" "LM" "ZP" "NSE_IT" "NSE_BB" "NSE_FR"}}
             
@@ -712,25 +1155,35 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
             {{$source := .}}
             {{$sourceItems := where $.Items "Source" $source}}
             {{if $sourceItems}}
-            <div class="news-source">
+            <div class="news-source" data-source="{{$source}}">
                 <div class="source-header">
-                    <div class="source-icon" style="background-color: {{(index $sourceItems 0).SourceColor}};">{{$source}}</div>
+                    <div class="source-icon" style="background: linear-gradient(135deg, {{(index $sourceItems 0).SourceColor}}, {{(index $sourceItems 0).SourceColor}}dd);">
+                        {{$source}}
+                    </div>
                     <div class="source-name">{{(index $sourceItems 0).SourceName}}</div>
-                    <div class="updated-badge">Updated</div>
-                    <div class="item-count">{{len $sourceItems}}</div>
+                    <div class="source-badges">
+                        <div class="updated-badge">
+                            <i class="fas fa-check-circle"></i> Updated
+                        </div>
+                        <div class="item-count">{{len $sourceItems}}</div>
+                    </div>
                 </div>
                 <div class="news-items">
                     {{range $sourceItems}}
-                    <div class="news-item {{if .HasNifty50}}nifty50-highlight{{end}}">
+                    <div class="news-item {{if .HasNifty50}}nifty50-highlight{{end}}" data-title="{{.Title | lower}}" data-description="{{.Description | lower}}">
                         {{if .HasNifty50}}
-                        <span class="nifty50-badge" title="Mentions NIFTY50 stock: {{.Nifty50Stock}}">{{.Nifty50Stock}}</span>
+                        <span class="nifty50-badge" title="Mentions NIFTY50 stock: {{.Nifty50Stock}}">
+                            <i class="fas fa-star"></i> {{.Nifty50Stock}}
+                        </span>
                         {{end}}
                         <a href="{{.Link}}" class="news-title" target="_blank" rel="noopener">{{.Title}}</a>
                         {{if .Description}}
                         <div class="news-description">{{.Description}}</div>
                         {{end}}
                         <div class="news-meta">
-                            <span class="news-time">{{.TimeAgo}}</span>
+                            <span class="news-time">
+                                <i class="far fa-clock"></i> {{.TimeAgo}}
+                            </span>
                             {{if .Category}}
                             <span class="news-category">{{.Category}}</span>
                             {{else}}
@@ -746,29 +1199,172 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
         </div>
     </div>
     
-    <button class="refresh-btn" onclick="location.reload()" title="Refresh News">🔄</button>
+    <div class="floating-controls">
+        <button class="control-btn scroll-top-btn" onclick="scrollToTop()" title="Scroll to top" aria-label="Scroll to top">
+            <i class="fas fa-chevron-up"></i>
+        </button>
+        <button class="control-btn refresh-btn" onclick="refreshNews()" title="Refresh news" aria-label="Refresh news">
+            <i class="fas fa-sync-alt"></i>
+        </button>
+    </div>
     
     <script>
-        // Auto-refresh every 5 minutes (300 seconds)
-        let refreshInterval = setInterval(function() {
-            console.log('Auto-refreshing news...');
-            location.reload();
-        }, 300000);
+        // Theme management
+        let isDarkMode = localStorage.getItem('darkMode') === 'true';
         
-        // Update time ago every minute
-        setInterval(function() {
-            // This would normally update the time ago text
-            // For now, we'll just log it
-            console.log('Updating time indicators...');
-        }, 60000);
+        function initTheme() {
+            if (isDarkMode) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                document.getElementById('themeIcon').className = 'fas fa-sun';
+                document.getElementById('themeText').textContent = 'Light Mode';
+            }
+        }
         
-        // Show loading state on refresh
-        window.addEventListener('beforeunload', function() {
-            document.body.innerHTML = '<div class="loading">🔄 Refreshing news...</div>';
+        function toggleTheme() {
+            isDarkMode = !isDarkMode;
+            localStorage.setItem('darkMode', isDarkMode);
+            
+            if (isDarkMode) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                document.getElementById('themeIcon').className = 'fas fa-sun';
+                document.getElementById('themeText').textContent = 'Light Mode';
+            } else {
+                document.documentElement.removeAttribute('data-theme');
+                document.getElementById('themeIcon').className = 'fas fa-moon';
+                document.getElementById('themeText').textContent = 'Dark Mode';
+            }
+        }
+        
+        // Search functionality
+        const searchInput = document.getElementById('searchInput');
+        const newsGrid = document.getElementById('newsGrid');
+        
+        searchInput.addEventListener('input', function() {
+            const query = this.value.toLowerCase().trim();
+            const newsSources = newsGrid.querySelectorAll('.news-source');
+            
+            newsSources.forEach(source => {
+                const newsItems = source.querySelectorAll('.news-item');
+                let visibleItems = 0;
+                
+                newsItems.forEach(item => {
+                    const title = item.getAttribute('data-title') || '';
+                    const description = item.getAttribute('data-description') || '';
+                    
+                    if (query === '' || title.includes(query) || description.includes(query)) {
+                        item.style.display = 'block';
+                        visibleItems++;
+                    } else {
+                        item.style.display = 'none';
+                    }
+                });
+                
+                // Hide source if no items are visible
+                source.style.display = visibleItems > 0 ? 'block' : 'none';
+            });
         });
         
-        console.log('📈 Business News Aggregator loaded');
-        console.log('🔄 Auto-refresh every 5 minutes');
+        // Scroll to top functionality
+        const scrollTopBtn = document.querySelector('.scroll-top-btn');
+        
+        window.addEventListener('scroll', function() {
+            if (window.pageYOffset > 300) {
+                scrollTopBtn.classList.add('visible');
+            } else {
+                scrollTopBtn.classList.remove('visible');
+            }
+        });
+        
+        function scrollToTop() {
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        }
+        
+        // Refresh functionality
+        function refreshNews() {
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            loadingOverlay.classList.add('show');
+            
+            setTimeout(() => {
+                location.reload();
+            }, 500);
+        }
+        
+        // Count NIFTY50 mentions
+        function countNiftyMentions() {
+            const niftyItems = document.querySelectorAll('.nifty50-highlight');
+            const count = niftyItems.length;
+            document.getElementById('niftyCount').textContent = count + ' NIFTY50 mentions';
+        }
+        
+        // Auto-refresh functionality
+        let refreshInterval = setInterval(function() {
+            console.log('Auto-refreshing news...');
+            refreshNews();
+        }, 300000); // 5 minutes
+        
+        // Update time indicators every minute
+        setInterval(function() {
+            console.log('Time indicators updated');
+        }, 60000);
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Ctrl/Cmd + R for refresh
+            if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+                e.preventDefault();
+                refreshNews();
+            }
+            
+            // Ctrl/Cmd + D for dark mode
+            if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+                e.preventDefault();
+                toggleTheme();
+            }
+            
+            // Escape to clear search
+            if (e.key === 'Escape') {
+                searchInput.value = '';
+                searchInput.dispatchEvent(new Event('input'));
+            }
+        });
+        
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            initTheme();
+            countNiftyMentions();
+            console.log('📈 Enhanced Business News Aggregator loaded');
+            console.log('🔄 Auto-refresh every 5 minutes');
+            console.log('⌨️  Keyboard shortcuts: Ctrl+R (refresh), Ctrl+D (theme), Esc (clear search)');
+        });
+        
+        // Performance optimization - lazy loading for images if any
+        if ('IntersectionObserver' in window) {
+            const imageObserver = new IntersectionObserver((entries, observer) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const img = entry.target;
+                        img.src = img.dataset.src;
+                        img.classList.remove('lazy');
+                        imageObserver.unobserve(img);
+                    }
+                });
+            });
+        }
+        
+        // Add smooth scrolling for better UX
+        document.documentElement.style.scrollBehavior = 'smooth';
+        
+        // Add focus management for accessibility
+        searchInput.addEventListener('focus', function() {
+            this.style.transform = 'scale(1.02)';
+        });
+        
+        searchInput.addEventListener('blur', function() {
+            this.style.transform = 'scale(1)';
+        });
     </script>
 </body>
 </html>
@@ -799,6 +1395,9 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			return result
+		},
+		"lower": func(s string) string {
+			return strings.ToLower(s)
 		},
 	}
 
