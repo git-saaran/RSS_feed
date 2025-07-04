@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Business News Aggregator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #4f46e5;
+            --bg-color: #ffffff;
+            --text-color: #374151;
+            --border-color: #e5e7eb;
+            --hover-color: #f9fafb;
+            --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        [data-theme="dark"] {
+            --bg-color: #1f2937;
+            --text-color: #f3f4f6;
+            --border-color: #374151;
+            --hover-color: #374151;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .source-filter {
+            margin-bottom: 2rem;
+        }
+
+        .source-filter select {
+            padding: 0.5rem 1rem;
+            font-size: 1rem;
+            border: 1px solid var(--border-color);
+            border-radius: 0.5rem;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            cursor: pointer;
+            min-width: 200px;
+        }
+
+        .source-filter select:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .news-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .news-card {
+            background-color: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            box-shadow: var(--card-shadow);
+            transition: transform 0.2s ease;
+        }
+
+        .news-card:hover {
+            transform: translateY(-2px);
+        }
+
+        .news-source {
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            color: var(--primary-color);
+        }
+
+        .news-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            color: var(--text-color);
+            text-decoration: none;
+        }
+
+        .news-title:hover {
+            color: var(--primary-color);
+        }
+
+        .news-description {
+            font-size: 0.875rem;
+            color: var(--text-color);
+            margin-bottom: 1rem;
+            opacity: 0.9;
+        }
+
+        .news-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.75rem;
+            color: var(--text-color);
+            opacity: 0.7;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+
+            .news-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>Business News</h1>
+            <div class="source-filter">
+                <select id="sourceFilter">
+                    <option value="all">All Sources</option>
+                    <option value="markets">Markets</option>
+                    <option value="news">News</option>
+                    <option value="commodities">Commodities</option>
+                    <option value="ipo">IPO</option>
+                    <option value="cryptocurrency">Cryptocurrency</option>
+                </select>
+            </div>
+        </header>
+
+        <div class="news-grid">
+            {{range .Items}}
+            <article class="news-card">
+                <div class="news-source">{{.SourceName}}</div>
+                <a href="{{.Link}}" target="_blank" class="news-title">{{.Title}}</a>
+                <p class="news-description">{{.Description}}</p>
+                <div class="news-meta">
+                    <span>{{.TimeAgo}}</span>
+                </div>
+            </article>
+            {{end}}
+        </div>
+    </div>
+
+    <script>
+        const sourceFilter = document.getElementById('sourceFilter');
+        sourceFilter.addEventListener('change', (e) => {
+            const source = e.target.value;
+            window.location.href = source === 'all' ? '/' : `/filter?source=${source}`;
+        });
+    </script>
+</body>
+</html> 
