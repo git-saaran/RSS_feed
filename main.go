@@ -883,39 +883,50 @@ func filterHandler(w http.ResponseWriter, r *http.Request) {
 	for _, item := range allItems {
 		// Support BS_ALL for all Business Standard sources
 		if source == "BS_ALL" {
-			if !(item.Source == "BS_MARKETS" || item.Source == "BS_NEWS" || item.Source == "BS_COMMODITIES" || item.Source == "BS_IPO" || item.Source == "BS_CRYPTO") {
+			if !(item.Source == "BS_MARKETS" || item.Source == "BS_NEWS" || item.Source == "BS_COMMODITIES" || item.Source == "BS_IPO" || item.Source == "BS_STOCK_MARKET" || item.Source == "BS_CRYPTO") {
 				continue
 			}
 		} else if source != "" && item.Source != source {
 			continue
 		}
+		
 		if category != "" && item.Category != category {
 			continue
 		}
+		
 		if sentiment != "" && item.SentimentLabel != sentiment {
 			continue
 		}
+		
 		if nifty50Only && !item.HasNifty50 {
 			continue
 		}
+		
 		filtered = append(filtered, item)
 	}
-	
+
+	// Check Accept header to determine response format
+	accept := r.Header.Get("Accept")
+	if strings.Contains(accept, "text/html") {
+		// Return HTML response using the same template as homeHandler
+		tmpl := template.Must(template.New("bsfeed").Parse(homeTemplate))
+		tmpl.Execute(w, struct{ Items []NewsItem }{filtered})
+		return
+	}
+
+	// Return JSON response
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	json.NewEncoder(w).Encode(filtered)
 }
 
-func homeHandler(w http.ResponseWriter, r *http.Request) {
-	news, lastUpdated := getCurrentNews()
-	
-	tmpl := `
+var homeTemplate = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Business Standard Feed</title>
+    <title>RSS News Aggregator</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -1027,26 +1038,29 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
                 grid-template-columns: 1fr;
             }
         }
+        .hidden {
+            display: none !important;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <header class="header">
-            <h1>Business Standard Feed</h1>
+            <h1>RSS News Aggregator</h1>
             <div class="bs-source-filter">
                 <select id="bsSourceFilter">
-                    <option value="BS_ALL">All</option>
-                    <option value="BS_MARKETS">Markets</option>
-                    <option value="BS_NEWS">News</option>
-                    <option value="BS_COMMODITIES">Commodities</option>
-                    <option value="BS_IPO">IPO</option>
-                    <option value="BS_CRYPTO">Cryptocurrency</option>
+                    <option value="BS_ALL">Business Standard - All</option>
+                    <option value="BS_MARKETS">Business Standard - Markets</option>
+                    <option value="BS_NEWS">Business Standard - News</option>
+                    <option value="BS_COMMODITIES">Business Standard - Commodities</option>
+                    <option value="BS_IPO">Business Standard - IPO</option>
+                    <option value="BS_STOCK_MARKET">Business Standard - Stock Market</option>
+                    <option value="BS_CRYPTO">Business Standard - Cryptocurrency</option>
                 </select>
             </div>
         </header>
         <div class="news-grid" id="bsNewsGrid">
             {{range .Items}}
-            {{if or (eq .Source "BS_MARKETS") (eq .Source "BS_NEWS") (eq .Source "BS_COMMODITIES") (eq .Source "BS_IPO") (eq .Source "BS_CRYPTO")}}
             <article class="news-card" data-source="{{.Source}}">
                 <div class="news-source">{{.SourceName}}</div>
                 <a href="{{.Link}}" target="_blank" class="news-title">{{.Title}}</a>
@@ -1056,21 +1070,41 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
                 </div>
             </article>
             {{end}}
-            {{end}}
         </div>
     </div>
     <script>
         const bsSourceFilter = document.getElementById('bsSourceFilter');
+        const newsCards = document.querySelectorAll('.news-card');
+        
+        function filterNews(source) {
+            newsCards.forEach(card => {
+                const cardSource = card.dataset.source;
+                if (source === 'BS_ALL') {
+                    // Show card if it's any Business Standard source
+                    card.classList.toggle('hidden', 
+                        !['BS_MARKETS', 'BS_NEWS', 'BS_COMMODITIES', 'BS_IPO', 'BS_STOCK_MARKET', 'BS_CRYPTO'].includes(cardSource));
+                } else {
+                    // Show card only if it matches the selected source
+                    card.classList.toggle('hidden', cardSource !== source);
+                }
+            });
+        }
+        
+        // Initial filter
+        filterNews('BS_ALL');
+        
         bsSourceFilter.addEventListener('change', (e) => {
-            const val = e.target.value;
-            window.location.href = val === 'BS_ALL' ? '/filter?source=BS_ALL' : `/filter?source=${val}`;
+            filterNews(e.target.value);
         });
     </script>
 </body>
 </html>
 `
 
-	t := template.Must(template.New("bsfeed").Parse(tmpl))
+func homeHandler(w http.ResponseWriter, r *http.Request) {
+	news, lastUpdated := getCurrentNews()
+	
+	t := template.Must(template.New("bsfeed").Parse(homeTemplate))
 	t.Execute(w, struct{ Items []NewsItem }{news})
 }
 
