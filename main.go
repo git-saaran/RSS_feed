@@ -778,6 +778,26 @@ func fetchAllNews() {
 				// Calculate priority
 				newsItem.Priority = calculatePriority(newsItem)
 
+				// Unify Business Standard sources into a single tile
+				if strings.HasPrefix(newsItem.SourceName, "Business Standard") {
+					// Extract sub-category (Markets, News, Commodities, IPO, Cryptocurrency, etc.)
+					subCat := strings.TrimPrefix(newsItem.SourceName, "Business Standard - ")
+					if subCat == newsItem.SourceName { // fallback (no hyphen)
+						subCat = "All"
+					}
+
+					newsItem.Source = "BS"                       // Unified source code
+					newsItem.SourceName = "Business Standard"     // Display name
+					newsItem.SourceColor = "#60a5fa"             // Lighter bluish color
+
+					// Store sub-category in Category field if not already set
+					if newsItem.Category == "" {
+						newsItem.Category = subCat
+					}
+
+					// Attach lowercase category for filtering in template (data-bs-cat)
+				}
+
 				allNews = append(allNews, newsItem)
 				
 				// Memory safety check
@@ -1960,6 +1980,21 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
          .news-item.sentiment-neutral {
              border-left-color: var(--text-secondary);
          }
++
++        /* Business Standard category dropdown */
++        .bs-select {
++            padding: 6px 10px;
++            border: 1px solid var(--border-color);
++            border-radius: 8px;
++            background: var(--card-bg);
++            color: var(--text-primary);
++            font-size: 12px;
++            cursor: pointer;
++        }
++        .bs-select option {
++            background: var(--card-bg);
++            color: var(--text-primary);
++        }
     </style>
 </head>
 <body>
@@ -2100,8 +2135,8 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
         </div>
         
         <div class="news-grid" id="newsGrid">
-            {{$sources := dict "TOI" "Times of India" "TH" "The Hindu" "BL" "Business Line" "LM" "LiveMint" "ZP" "Zerodha Pulse" "NSE_IT" "NSE Insider Trading" "NSE_BB" "NSE Buy Back" "NSE_FR" "NSE Financial Results" "NDTV_PROFIT" "NDTV Profit"}}
-            {{$sourceOrder := slice "BS_MARKETS" "BS_NEWS" "BS_COMMODITIES" "BS_IPO" "BS_STOCK_MARKET" "BS_CRYPTO" "NDTV_PROFIT" "TOI" "TH" "BL" "LM" "ZP" "NSE_IT" "NSE_BB" "NSE_FR"}}
+            {{$sources := dict "BS" "Business Standard" "TOI" "Times of India" "TH" "The Hindu" "BL" "Business Line" "LM" "LiveMint" "ZP" "Zerodha Pulse" "NSE_IT" "NSE Insider Trading" "NSE_BB" "NSE Buy Back" "NSE_FR" "NSE Financial Results" "NDTV_PROFIT" "NDTV Profit"}}
+            {{$sourceOrder := slice "BS" "NDTV_PROFIT" "TOI" "TH" "BL" "LM" "ZP" "NSE_IT" "NSE_BB" "NSE_FR"}}
             
             {{range $sourceOrder}}
             {{$source := .}}
@@ -2113,6 +2148,16 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
                         {{$source}}
                     </div>
                     <div class="source-name">{{(index $sourceItems 0).SourceName}}</div>
+                    {{if eq $source "BS"}}
+                    <select class="bs-select" onchange="filterBSCat(this)">
+                        <option value="">All</option>
+                        <option value="markets">Markets</option>
+                        <option value="news">News</option>
+                        <option value="commodities">Commodities</option>
+                        <option value="ipo">IPO</option>
+                        <option value="cryptocurrency">Cryptocurrency</option>
+                    </select>
+                    {{end}}
                     <div class="source-badges">
                         <div class="updated-badge">
                             <i class="fas fa-check-circle"></i> Updated
@@ -2122,7 +2167,7 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
                 </div>
                 <div class="news-items">
                     {{range $sourceItems}}
-                                         <div class="news-item {{if .HasNifty50}}nifty50-highlight{{end}} sentiment-{{.SentimentLabel | lower}}" data-title="{{.Title | lower}}" data-description="{{.Description | lower}}" data-sentiment="{{.SentimentLabel}}" data-reading-time="{{.ReadingTime}}">
+                                         <div class="news-item {{if .HasNifty50}}nifty50-highlight{{end}} sentiment-{{.SentimentLabel | lower}}" data-title="{{.Title | lower}}" data-description="{{.Description | lower}}" data-sentiment="{{.SentimentLabel}}" data-reading-time="{{.ReadingTime}}" data-bs-cat="{{.Category | lower}}">
                         {{if .HasNifty50}}
                         <span class="nifty50-badge" title="Mentions NIFTY50 stock: {{.Nifty50Stock}}">
                             <i class="fas fa-star"></i> {{.Nifty50Stock}}
@@ -2441,36 +2486,7 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
          
          // Enhanced article interactions
          function addArticleInteractions() {
-             const newsItems = document.querySelectorAll('.news-item');
-             
-             newsItems.forEach(item => {
-                 // Add reading time display
-                 const readingTime = item.getAttribute('data-reading-time');
-                 if (readingTime) {
-                     const metaDiv = item.querySelector('.news-meta');
-                     const readingTimeSpan = document.createElement('span');
-                     readingTimeSpan.className = 'reading-time';
-                     readingTimeSpan.innerHTML = '<i class="far fa-clock"></i> ' + readingTime + ' min read';
-                     metaDiv.appendChild(readingTimeSpan);
-                 }
-                 
-                 // Add sentiment indicator
-                 const sentiment = item.getAttribute('data-sentiment');
-                 if (sentiment) {
-                     item.classList.add('sentiment-' + sentiment.toLowerCase());
-                     
-                     const sentimentIndicator = document.createElement('div');
-                     sentimentIndicator.className = 'sentiment-indicator sentiment-' + sentiment.toLowerCase();
-                     sentimentIndicator.title = 'Sentiment: ' + sentiment;
-                     
-                     let icon = '😐';
-                     if (sentiment === 'Positive') icon = '😊';
-                     if (sentiment === 'Negative') icon = '😔';
-                     
-                     sentimentIndicator.textContent = icon;
-                     item.appendChild(sentimentIndicator);
-                 }
-             });
+             // Reading time and sentiment emojis removed for cleaner UI
          }
          
          // Performance monitoring
