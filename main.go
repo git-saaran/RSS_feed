@@ -2167,7 +2167,7 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
                 </div>
                 <div class="news-items">
                     {{range $sourceItems}}
-                                         <div class="news-item {{if .HasNifty50}}nifty50-highlight{{end}} sentiment-{{.SentimentLabel | lower}}" data-title="{{.Title | lower}}" data-description="{{.Description | lower}}" data-sentiment="{{.SentimentLabel}}" data-reading-time="{{.ReadingTime}}" data-bs-cat="{{.Category | lower}}">
+                                         <div class="news-item {{if .HasNifty50}}nifty50-highlight{{end}} sentiment-{{.SentimentLabel | lower}}" data-title="{{.Title | lower}}" data-description="{{.Description | lower}}" data-sentiment="{{.SentimentLabel}}" data-bs-cat="{{.Category | lower}}">
                         {{if .HasNifty50}}
                         <span class="nifty50-badge" title="Mentions NIFTY50 stock: {{.Nifty50Stock}}">
                             <i class="fas fa-star"></i> {{.Nifty50Stock}}
@@ -2543,6 +2543,20 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
         searchInput.addEventListener('blur', function() {
             this.style.transform = 'scale(1)';
         });
+
+        // Business Standard dropdown filter
+        function filterBSCat(selectElement) {
+            const selected = selectElement.value.toLowerCase();
+            const newsItems = selectElement.closest('.news-source').querySelectorAll('.news-item');
+            newsItems.forEach(item => {
+                const cat = (item.getAttribute('data-bs-cat') || '').toLowerCase();
+                if (selected === '' || selected === 'all' || cat.includes(selected)) {
+                    item.style.display = 'block';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        }
     </script>
 </body>
 </html>
