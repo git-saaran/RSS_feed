@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Business News Aggregator</title>
+    <title>Business Standard Feed</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -50,11 +50,11 @@
             border-bottom: 1px solid var(--border-color);
         }
 
-        .source-filter {
+        .bs-source-filter {
             margin-bottom: 2rem;
         }
 
-        .source-filter select {
+        .bs-source-filter select {
             padding: 0.5rem 1rem;
             font-size: 1rem;
             border: 1px solid var(--border-color);
@@ -65,7 +65,7 @@
             min-width: 200px;
         }
 
-        .source-filter select:focus {
+        .bs-source-filter select:focus {
             outline: none;
             border-color: var(--primary-color);
         }
@@ -138,22 +138,22 @@
 <body>
     <div class="container">
         <header class="header">
-            <h1>Business News</h1>
-            <div class="source-filter">
-                <select id="sourceFilter">
-                    <option value="all">All Sources</option>
-                    <option value="markets">Markets</option>
-                    <option value="news">News</option>
-                    <option value="commodities">Commodities</option>
-                    <option value="ipo">IPO</option>
-                    <option value="cryptocurrency">Cryptocurrency</option>
+            <h1>Business Standard Feed</h1>
+            <div class="bs-source-filter">
+                <select id="bsSourceFilter">
+                    <option value="BS_ALL">All</option>
+                    <option value="BS_MARKETS">Markets</option>
+                    <option value="BS_NEWS">News</option>
+                    <option value="BS_COMMODITIES">Commodities</option>
+                    <option value="BS_IPO">IPO</option>
+                    <option value="BS_CRYPTO">Cryptocurrency</option>
                 </select>
             </div>
         </header>
-
-        <div class="news-grid">
+        <div class="news-grid" id="bsNewsGrid">
             {{range .Items}}
-            <article class="news-card">
+            {{if or (eq .Source "BS_MARKETS") (eq .Source "BS_NEWS") (eq .Source "BS_COMMODITIES") (eq .Source "BS_IPO") (eq .Source "BS_CRYPTO")}}
+            <article class="news-card" data-source="{{.Source}}">
                 <div class="news-source">{{.SourceName}}</div>
                 <a href="{{.Link}}" target="_blank" class="news-title">{{.Title}}</a>
                 <p class="news-description">{{.Description}}</p>
@@ -162,14 +162,15 @@
                 </div>
             </article>
             {{end}}
+            {{end}}
         </div>
     </div>
 
     <script>
-        const sourceFilter = document.getElementById('sourceFilter');
-        sourceFilter.addEventListener('change', (e) => {
-            const source = e.target.value;
-            window.location.href = source === 'all' ? '/' : `/filter?source=${source}`;
+        const bsSourceFilter = document.getElementById('bsSourceFilter');
+        bsSourceFilter.addEventListener('change', (e) => {
+            const val = e.target.value;
+            window.location.href = val === 'BS_ALL' ? '/filter?source=BS_ALL' : `/filter?source=${val}`;
         });
     </script>
 </body>

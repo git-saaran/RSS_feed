@@ -103,7 +103,7 @@ type NewsItem struct {
 	Summary         string        `json:"summary"`
 	Keywords        []string      `json:"keywords"`
 	Priority        int           `json:"priority"`
-
+	ReadingTime     int           `json:"reading_time"`
 }
 
 type NewsData struct {
@@ -754,7 +754,7 @@ func fetchAllNews() {
 				sentimentScore, sentimentLabel := analyzeSentiment(fullText)
 				keywords := extractKeywords(fullText)
 				summary := generateSummary(item.Title, item.Description)
-
+				readingTime := calculateReadingTime(fullText)
 
 				newsItem := NewsItem{
 					Title:          item.Title,
@@ -772,6 +772,7 @@ func fetchAllNews() {
 					SentimentLabel: sentimentLabel,
 					Summary:        summary,
 					Keywords:       keywords,
+					ReadingTime:    readingTime,
 				}
 
 				// Calculate priority
@@ -880,7 +881,12 @@ func filterHandler(w http.ResponseWriter, r *http.Request) {
 	
 	var filtered []NewsItem
 	for _, item := range allItems {
-		if source != "" && item.Source != source {
+		// Support BS_ALL for all Business Standard sources
+		if source == "BS_ALL" {
+			if !(item.Source == "BS_MARKETS" || item.Source == "BS_NEWS" || item.Source == "BS_COMMODITIES" || item.Source == "BS_IPO" || item.Source == "BS_CRYPTO") {
+				continue
+			}
+		} else if source != "" && item.Source != source {
 			continue
 		}
 		if category != "" && item.Category != category {
@@ -908,44 +914,1673 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	sentimentData := liveSentiment
 	newsMutex.RUnlock()
 
-	// Filter news based on source if specified
-	source := r.URL.Query().Get("source")
-	if source != "" {
-		var filteredNews []NewsItem
-		for _, item := range news {
-			switch source {
-			case "markets":
-				if item.Source == "BS_MARKETS" {
-					filteredNews = append(filteredNews, item)
-				}
-			case "news":
-				if item.Source == "BS_NEWS" {
-					filteredNews = append(filteredNews, item)
-				}
-			case "commodities":
-				if item.Source == "BS_COMMODITIES" {
-					filteredNews = append(filteredNews, item)
-				}
-			case "ipo":
-				if item.Source == "BS_IPO" {
-					filteredNews = append(filteredNews, item)
-				}
-			case "cryptocurrency":
-				if item.Source == "BS_CRYPTO" {
-					filteredNews = append(filteredNews, item)
+	tmpl := `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📈 Business News Aggregator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --dark-gradient: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            --card-bg: rgba(255, 255, 255, 0.95);
+            --card-bg-dark: rgba(30, 30, 46, 0.95);
+            --text-primary: #1a202c;
+            --text-primary-dark: #e2e8f0;
+            --text-secondary: #4a5568;
+            --text-secondary-dark: #a0aec0;
+            --accent-color: #4f46e5;
+            --success-color: #10b981;
+            --warning-color: #f59e0b;
+            --error-color: #ef4444;
+            --border-color: rgba(0, 0, 0, 0.1);
+            --border-color-dark: rgba(255, 255, 255, 0.1);
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+            --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.15);
+            --border-radius: 16px;
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        [data-theme="dark"] {
+            --card-bg: var(--card-bg-dark);
+            --text-primary: var(--text-primary-dark);
+            --text-secondary: var(--text-secondary-dark);
+            --border-color: var(--border-color-dark);
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--primary-gradient);
+            min-height: 100vh;
+            padding: 20px;
+            color: var(--text-primary);
+            transition: var(--transition);
+            overflow-x: hidden;
+        }
+        
+        [data-theme="dark"] body {
+            background: var(--dark-gradient);
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            animation: slideUp 0.8s ease-out;
+        }
+        
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        @keyframes shimmer {
+            0% { background-position: -200px 0; }
+            100% { background-position: calc(200px + 100%) 0; }
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            position: relative;
+        }
+        
+        .header::before {
+            content: '';
+            position: absolute;
+            top: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100px;
+            height: 4px;
+            background: linear-gradient(90deg, var(--accent-color), var(--success-color));
+            border-radius: 2px;
+            animation: pulse 2s infinite;
+        }
+        
+        .header h1 {
+            color: white;
+            font-size: clamp(2rem, 4vw, 3rem);
+            font-weight: 700;
+            margin-bottom: 16px;
+            text-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            letter-spacing: -0.02em;
+        }
+        
+        .header p {
+            color: rgba(255,255,255,0.9);
+            font-size: clamp(1rem, 2vw, 1.2rem);
+            margin-bottom: 8px;
+            font-weight: 400;
+        }
+        
+        .last-updated {
+            color: rgba(255,255,255,0.8);
+            font-size: 0.9rem;
+            font-style: italic;
+            font-family: 'JetBrains Mono', monospace;
+            background: rgba(255,255,255,0.1);
+            padding: 8px 16px;
+            border-radius: 20px;
+            display: inline-block;
+            backdrop-filter: blur(10px);
+            margin-top: 8px;
+        }
+        
+        .controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+        
+        .theme-toggle {
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 10px 16px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: var(--transition);
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+                 .theme-toggle:hover {
+             background: rgba(255,255,255,0.3);
+             transform: translateY(-2px);
+         }
+         
+         .dashboard-toggle {
+             background: rgba(255,255,255,0.2);
+             border: 1px solid rgba(255,255,255,0.3);
+             color: white;
+             padding: 10px 16px;
+             border-radius: 25px;
+             cursor: pointer;
+             font-size: 14px;
+             font-weight: 500;
+             transition: var(--transition);
+             backdrop-filter: blur(10px);
+             display: flex;
+             align-items: center;
+             gap: 8px;
+         }
+         
+         .dashboard-toggle:hover {
+             background: rgba(255,255,255,0.3);
+             transform: translateY(-2px);
+         }
+         
+         .filter-controls {
+             display: flex;
+             gap: 12px;
+             align-items: center;
+         }
+         
+         .filter-controls select {
+             padding: 8px 12px;
+             border: 1px solid rgba(255,255,255,0.3);
+             border-radius: 20px;
+             background: rgba(255,255,255,0.2);
+             color: white;
+             font-size: 13px;
+             backdrop-filter: blur(10px);
+             cursor: pointer;
+         }
+         
+         .filter-controls select option {
+             background: var(--card-bg);
+             color: var(--text-primary);
+         }
+         
+         /* Analytics Dashboard Styles */
+         .analytics-dashboard {
+             background: rgba(255,255,255,0.1);
+             border-radius: var(--border-radius);
+             padding: 30px;
+             margin-bottom: 30px;
+             backdrop-filter: blur(20px);
+             border: 1px solid rgba(255,255,255,0.2);
+             animation: slideDown 0.5s ease-out;
+         }
+         
+         @keyframes slideDown {
+             from {
+                 opacity: 0;
+                 transform: translateY(-20px);
+             }
+             to {
+                 opacity: 1;
+                 transform: translateY(0);
+             }
+         }
+         
+         .analytics-dashboard h2 {
+             color: white;
+             font-size: 1.8rem;
+             margin-bottom: 25px;
+             text-align: center;
+             display: flex;
+             align-items: center;
+             justify-content: center;
+             gap: 12px;
+         }
+         
+         .dashboard-grid {
+             display: grid;
+             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+             gap: 24px;
+         }
+         
+         .analytics-card {
+             background: var(--card-bg);
+             border-radius: var(--border-radius);
+             padding: 24px;
+             box-shadow: var(--shadow-lg);
+             border: 1px solid var(--border-color);
+             transition: var(--transition);
+         }
+         
+         .analytics-card:hover {
+             transform: translateY(-4px);
+             box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+         }
+         
+         .analytics-card h3 {
+             color: var(--text-primary);
+             font-size: 1.2rem;
+             margin-bottom: 20px;
+             display: flex;
+             align-items: center;
+             gap: 10px;
+         }
+         
+         /* Sentiment Chart */
+         .sentiment-chart {
+             margin-bottom: 16px;
+         }
+         
+         .sentiment-bar {
+             display: flex;
+             height: 40px;
+             border-radius: 20px;
+             overflow: hidden;
+             background: #f0f0f0;
+             margin-bottom: 12px;
+         }
+         
+         .sentiment-positive {
+             background: linear-gradient(135deg, var(--success-color), #059669);
+             color: white;
+             display: flex;
+             align-items: center;
+             justify-content: center;
+             font-weight: 600;
+             font-size: 12px;
+         }
+         
+         .sentiment-neutral {
+             background: linear-gradient(135deg, #6b7280, #4b5563);
+             color: white;
+             display: flex;
+             align-items: center;
+             justify-content: center;
+             font-weight: 600;
+             font-size: 12px;
+         }
+         
+         .sentiment-negative {
+             background: linear-gradient(135deg, var(--error-color), #dc2626);
+             color: white;
+             display: flex;
+             align-items: center;
+             justify-content: center;
+             font-weight: 600;
+             font-size: 12px;
+         }
+         
+         .sentiment-labels {
+             display: flex;
+             justify-content: space-between;
+             font-size: 12px;
+             color: var(--text-secondary);
+         }
+         
+         .overall-sentiment {
+             text-align: center;
+             font-size: 16px;
+             color: var(--text-primary);
+         }
+         
+         .sentiment-positive { color: var(--success-color) !important; }
+         .sentiment-neutral { color: var(--text-secondary) !important; }
+         .sentiment-negative { color: var(--error-color) !important; }
+         
+         /* Keywords List */
+         .keywords-list {
+             display: flex;
+             flex-direction: column;
+             gap: 12px;
+         }
+         
+         .keyword-item {
+             display: flex;
+             justify-content: space-between;
+             align-items: center;
+             padding: 10px;
+             background: rgba(79, 70, 229, 0.1);
+             border-radius: 8px;
+             border-left: 3px solid var(--accent-color);
+         }
+         
+         .keyword {
+             font-weight: 500;
+             color: var(--text-primary);
+         }
+         
+         .count {
+             background: var(--accent-color);
+             color: white;
+             padding: 2px 8px;
+             border-radius: 12px;
+             font-size: 11px;
+             font-weight: 600;
+         }
+         
+         /* Source Chart */
+         .source-chart {
+             display: flex;
+             flex-direction: column;
+             gap: 12px;
+         }
+         
+         .source-bar {
+             display: flex;
+             align-items: center;
+             gap: 12px;
+         }
+         
+         .source-name {
+             font-size: 12px;
+             color: var(--text-secondary);
+             min-width: 120px;
+             font-weight: 500;
+         }
+         
+         .bar-container {
+             flex: 1;
+             display: flex;
+             align-items: center;
+             gap: 8px;
+         }
+         
+         .bar {
+             height: 20px;
+             background: linear-gradient(135deg, var(--accent-color), var(--success-color));
+             border-radius: 10px;
+             min-width: 2px;
+             transition: width 0.5s ease;
+         }
+         
+         .bar-count {
+             font-size: 11px;
+             font-weight: 600;
+             color: var(--text-secondary);
+             min-width: 20px;
+         }
+         
+         /* Trending Topics */
+         .trending-topics {
+             display: flex;
+             flex-wrap: wrap;
+             gap: 10px;
+         }
+         
+         .trending-tag {
+             background: linear-gradient(135deg, var(--warning-color), #d97706);
+             color: white;
+             padding: 6px 12px;
+             border-radius: 16px;
+             font-size: 12px;
+             font-weight: 600;
+             transition: var(--transition);
+         }
+         
+         .trending-tag:hover {
+             transform: translateY(-2px);
+             box-shadow: var(--shadow-md);
+         }
+        
+        .search-box {
+            position: relative;
+            width: 300px;
+            max-width: 100%;
+        }
+        
+        .search-input {
+            width: 100%;
+            padding: 12px 40px 12px 16px;
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 25px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            font-size: 14px;
+            backdrop-filter: blur(10px);
+            transition: var(--transition);
+        }
+        
+        .search-input::placeholder {
+            color: rgba(255,255,255,0.7);
+        }
+        
+        .search-input:focus {
+            outline: none;
+            background: rgba(255,255,255,0.3);
+            border-color: rgba(255,255,255,0.5);
+        }
+        
+        .search-icon {
+            position: absolute;
+            right: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: rgba(255,255,255,0.7);
+        }
+        
+        .stats-bar {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+        
+        .stat-item {
+            background: rgba(255,255,255,0.15);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255,255,255,0.2);
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .stat-item:hover {
+            transform: translateY(-2px);
+            background: rgba(255,255,255,0.25);
+        }
+        
+        .stat-icon {
+            font-size: 16px;
+        }
+        
+        .news-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+            gap: 24px;
+            animation: fadeIn 1s ease-out 0.2s both;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        .news-source {
+            background: var(--card-bg);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow-lg);
+            overflow: hidden;
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            transition: var(--transition);
+            position: relative;
+            animation: slideUp 0.6s ease-out;
+        }
+        
+        .news-source:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+        }
+        
+        .source-header {
+            padding: 20px 24px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            border-bottom: 1px solid var(--border-color);
+            background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .source-header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+            transition: left 0.5s;
+        }
+        
+        .news-source:hover .source-header::before {
+            left: 100%;
+        }
+        
+        .source-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 700;
+            font-size: 12px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: var(--shadow-md);
+        }
+        
+        .source-icon::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: transform 0.5s;
+            transform: rotate(45deg) translateX(-100%);
+        }
+        
+        .news-source:hover .source-icon::before {
+            transform: rotate(45deg) translateX(100%);
+        }
+        
+        .source-name {
+            font-weight: 600;
+            color: var(--text-primary);
+            flex: 1;
+            font-size: 16px;
+            letter-spacing: -0.01em;
+        }
+        
+        .source-badges {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .updated-badge {
+            background: linear-gradient(135deg, var(--success-color), #059669);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 16px;
+            font-size: 12px;
+            font-weight: 600;
+            box-shadow: var(--shadow-sm);
+            animation: pulse 2s infinite;
+        }
+        
+        .item-count {
+            background: linear-gradient(135deg, var(--accent-color), #3730a3);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+            box-shadow: var(--shadow-sm);
+        }
+        
+        .news-items {
+            max-height: 520px;
+            overflow-y: auto;
+            scroll-behavior: smooth;
+        }
+        
+        .news-item {
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border-color);
+            transition: var(--transition);
+            position: relative;
+            border-left: 3px solid transparent;
+        }
+        
+        .news-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 0;
+            height: 100%;
+            background: linear-gradient(135deg, var(--accent-color), var(--success-color));
+            transition: width 0.3s ease;
+        }
+        
+        .news-item:hover::before {
+            width: 3px;
+        }
+        
+        .nifty50-highlight {
+            background: linear-gradient(135deg, #fef3c7, #fde68a);
+            border-left-color: var(--warning-color);
+            position: relative;
+        }
+        
+        [data-theme="dark"] .nifty50-highlight {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.05));
+        }
+        
+        .nifty50-badge {
+            position: absolute;
+            top: 12px;
+            right: 20px;
+            background: linear-gradient(135deg, var(--warning-color), #d97706);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            box-shadow: var(--shadow-md);
+            z-index: 1;
+            animation: pulse 3s infinite;
+        }
+        
+        .news-item:hover {
+            background: rgba(79, 70, 229, 0.03);
+            transform: translateX(4px);
+        }
+        
+        [data-theme="dark"] .news-item:hover {
+            background: rgba(79, 70, 229, 0.1);
+        }
+        
+        .news-item:last-child {
+            border-bottom: none;
+        }
+        
+        .news-title {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+            line-height: 1.4;
+            text-decoration: none;
+            display: block;
+            font-size: 15px;
+            letter-spacing: -0.01em;
+            transition: var(--transition);
+        }
+        
+        .news-title:hover {
+            color: var(--accent-color);
+            text-decoration: underline;
+        }
+        
+        .news-description {
+            color: var(--text-secondary);
+            font-size: 13px;
+            line-height: 1.5;
+            margin-bottom: 12px;
+            font-weight: 400;
+        }
+        
+        .news-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        
+        .news-time {
+            font-weight: 500;
+            font-family: 'JetBrains Mono', monospace;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .news-category {
+            background: linear-gradient(135deg, #eff6ff, #dbeafe);
+            color: var(--accent-color);
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 11px;
+            box-shadow: var(--shadow-sm);
+            border: 1px solid rgba(79, 70, 229, 0.1);
+        }
+        
+        [data-theme="dark"] .news-category {
+            background: rgba(79, 70, 229, 0.2);
+            color: #a5b4fc;
+            border-color: rgba(79, 70, 229, 0.3);
+        }
+        
+        .floating-controls {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            z-index: 1000;
+        }
+        
+        .control-btn {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 600;
+            transition: var(--transition);
+            box-shadow: var(--shadow-lg);
+            backdrop-filter: blur(20px);
+        }
+        
+        .refresh-btn {
+            background: linear-gradient(135deg, var(--accent-color), #3730a3);
+            color: white;
+        }
+        
+        .refresh-btn:hover {
+            transform: scale(1.1) rotate(180deg);
+            box-shadow: 0 8px 32px rgba(79, 70, 229, 0.4);
+        }
+        
+        .scroll-top-btn {
+            background: linear-gradient(135deg, var(--success-color), #059669);
+            color: white;
+            opacity: 0;
+            visibility: hidden;
+        }
+        
+        .scroll-top-btn.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .scroll-top-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 8px 32px rgba(16, 185, 129, 0.4);
+        }
+        
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            opacity: 0;
+            visibility: hidden;
+            transition: var(--transition);
+        }
+        
+        .loading-overlay.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-left: 4px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            color: white;
+            font-size: 18px;
+            font-weight: 500;
+            margin-top: 20px;
+        }
+        
+        /* Scrollbar styling */
+        .news-items::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .news-items::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 4px;
+        }
+        
+        .news-items::-webkit-scrollbar-thumb {
+            background: linear-gradient(135deg, var(--accent-color), var(--success-color));
+            border-radius: 4px;
+            transition: var(--transition);
+        }
+        
+        .news-items::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(135deg, #3730a3, #059669);
+        }
+        
+        /* Mobile optimizations */
+        @media (max-width: 768px) {
+            body {
+                padding: 15px;
+            }
+            
+            .news-grid {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+            
+            .stats-bar {
+                gap: 12px;
+            }
+            
+            .stat-item {
+                font-size: 12px;
+                padding: 8px 14px;
+            }
+            
+            .controls {
+                flex-direction: column;
+                gap: 12px;
+            }
+            
+            .search-box {
+                width: 100%;
+                max-width: 300px;
+            }
+            
+            .floating-controls {
+                bottom: 20px;
+                right: 20px;
+            }
+            
+            .control-btn {
+                width: 50px;
+                height: 50px;
+                font-size: 18px;
+            }
+            
+            .news-item {
+                padding: 14px 18px;
+            }
+            
+            .source-header {
+                padding: 16px 18px;
+            }
+        }
+        
+        /* Print styles */
+        @media print {
+            body {
+                background: white !important;
+                color: black !important;
+            }
+            
+            .floating-controls,
+            .controls,
+            .stats-bar {
+                display: none !important;
+            }
+            
+            .news-source {
+                break-inside: avoid;
+                box-shadow: none !important;
+                border: 1px solid #ccc !important;
+            }
+        }
+        
+        /* Accessibility improvements */
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+        
+                 /* Focus styles for better keyboard navigation */
+         .news-title:focus,
+         .control-btn:focus,
+         .theme-toggle:focus,
+         .search-input:focus {
+             outline: 2px solid var(--accent-color);
+             outline-offset: 2px;
+         }
+         
+         /* Notification System */
+         .notification {
+             position: fixed;
+             top: 20px;
+             right: 20px;
+             background: var(--card-bg);
+             border-radius: var(--border-radius);
+             padding: 16px;
+             box-shadow: var(--shadow-lg);
+             border-left: 4px solid var(--accent-color);
+             z-index: 10000;
+             max-width: 350px;
+             animation: slideInRight 0.3s ease-out;
+         }
+         
+         @keyframes slideInRight {
+             from {
+                 transform: translateX(100%);
+                 opacity: 0;
+             }
+             to {
+                 transform: translateX(0);
+                 opacity: 1;
+             }
+         }
+         
+         .notification-info {
+             border-left-color: var(--accent-color);
+         }
+         
+         .notification-success {
+             border-left-color: var(--success-color);
+         }
+         
+         .notification-warning {
+             border-left-color: var(--warning-color);
+         }
+         
+         .notification-error {
+             border-left-color: var(--error-color);
+         }
+         
+         .notification-content {
+             display: flex;
+             justify-content: space-between;
+             align-items: center;
+             gap: 12px;
+         }
+         
+         .notification-content span {
+             color: var(--text-primary);
+             font-weight: 500;
+         }
+         
+         .notification-content button {
+             background: none;
+             border: none;
+             font-size: 18px;
+             cursor: pointer;
+             color: var(--text-secondary);
+             padding: 0;
+             width: 20px;
+             height: 20px;
+             display: flex;
+             align-items: center;
+             justify-content: center;
+         }
+         
+         .notification-content button:hover {
+             color: var(--text-primary);
+         }
+         
+         /* Sentiment Indicators */
+         .sentiment-indicator {
+             position: absolute;
+             top: 8px;
+             left: 8px;
+             width: 24px;
+             height: 24px;
+             border-radius: 50%;
+             display: flex;
+             align-items: center;
+             justify-content: center;
+             font-size: 12px;
+             z-index: 2;
+         }
+         
+         .reading-time {
+             color: var(--text-secondary);
+             font-size: 11px;
+             margin-left: 8px;
+         }
+         
+         /* Enhanced article states */
+         .news-item.sentiment-positive {
+             border-left-color: var(--success-color);
+         }
+         
+         .news-item.sentiment-negative {
+             border-left-color: var(--error-color);
+         }
+         
+         .news-item.sentiment-neutral {
+             border-left-color: var(--text-secondary);
+         }
+    </style>
+</head>
+<body>
+    <div class="loading-overlay" id="loadingOverlay">
+        <div style="text-align: center;">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">🔄 Refreshing news...</div>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div class="header">
+            <h1><i class="fas fa-chart-line"></i> Business News Aggregator</h1>
+            <p>Real-time updates from {{.TotalSources}} premium financial sources</p>
+            <div class="last-updated">
+                <i class="far fa-clock"></i> Last updated: {{.LastUpdated}}
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+                <i class="fas fa-moon" id="themeIcon"></i>
+                <span id="themeText">Dark Mode</span>
+            </button>
+            <div class="search-box">
+                <input type="text" class="search-input" placeholder="Search news..." id="searchInput">
+                <i class="fas fa-search search-icon"></i>
+            </div>
+            <button class="dashboard-toggle" onclick="toggleDashboard()" aria-label="Toggle analytics dashboard">
+                <i class="fas fa-chart-bar"></i>
+                <span>Analytics</span>
+            </button>
+            <div class="filter-controls">
+                <select id="sourceFilter" onchange="applyFilters()">
+                    <option value="">All Sources</option>
+                    {{range $source, $data := .Analytics.SourceCount}}
+                    <option value="{{$source}}">{{$source}} ({{$data}})</option>
+                    {{end}}
+                </select>
+                <select id="sentimentFilter" onchange="applyFilters()">
+                    <option value="">All Sentiment</option>
+                    <option value="Positive">Positive</option>
+                    <option value="Neutral">Neutral</option>
+                    <option value="Negative">Negative</option>
+                </select>
+            </div>
+        </div>
+        
+        <!-- Analytics Dashboard -->
+        <div class="analytics-dashboard" id="analyticsDashboard" style="display: none;">
+            <h2><i class="fas fa-chart-line"></i> News Analytics Dashboard</h2>
+            
+            <div class="dashboard-grid">
+                <!-- Sentiment Analysis Card -->
+                <div class="analytics-card">
+                    <h3><i class="fas fa-smile"></i> Sentiment Analysis</h3>
+                    <div class="sentiment-chart">
+                        <div class="sentiment-bar">
+                            <div class="sentiment-positive" style="width: {{.Sentiment.Positive}}%">
+                                {{printf "%.1f" .Sentiment.Positive}}%
+                            </div>
+                            <div class="sentiment-neutral" style="width: {{.Sentiment.Neutral}}%">
+                                {{printf "%.1f" .Sentiment.Neutral}}%
+                            </div>
+                            <div class="sentiment-negative" style="width: {{.Sentiment.Negative}}%">
+                                {{printf "%.1f" .Sentiment.Negative}}%
+                            </div>
+                        </div>
+                        <div class="sentiment-labels">
+                            <span class="positive-label">Positive</span>
+                            <span class="neutral-label">Neutral</span>
+                            <span class="negative-label">Negative</span>
+                        </div>
+                    </div>
+                    <div class="overall-sentiment">
+                        Overall: <strong class="sentiment-{{.Sentiment.Overall | lower}}">{{.Sentiment.Overall}}</strong>
+                    </div>
+                </div>
+
+                <!-- Top Keywords Card -->
+                <div class="analytics-card">
+                    <h3><i class="fas fa-tags"></i> Top Keywords</h3>
+                    <div class="keywords-list">
+                        {{range .Analytics.TopKeywords}}
+                        <div class="keyword-item">
+                            <span class="keyword">{{.Keyword}}</span>
+                            <span class="count">{{.Count}}</span>
+                        </div>
+                        {{end}}
+                    </div>
+                </div>
+
+                <!-- Source Distribution Card -->
+                <div class="analytics-card">
+                    <h3><i class="fas fa-broadcast-tower"></i> Source Distribution</h3>
+                    <div class="source-chart">
+                        {{range $source, $count := .Analytics.SourceCount}}
+                        <div class="source-bar">
+                            <span class="source-name">{{$source}}</span>
+                            <div class="bar-container">
+                                <div class="bar" style="width: {{div (mul $count 100) $.Analytics.TotalArticles}}%"></div>
+                                <span class="bar-count">{{$count}}</span>
+                            </div>
+                        </div>
+                        {{end}}
+                    </div>
+                </div>
+
+                <!-- Trending Topics Card -->
+                <div class="analytics-card">
+                    <h3><i class="fas fa-fire"></i> Trending Topics</h3>
+                    <div class="trending-topics">
+                        {{range .Analytics.TrendingTopics}}
+                        <span class="trending-tag">#{{.}}</span>
+                        {{end}}
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="stats-bar">
+            <div class="stat-item">
+                <i class="fas fa-newspaper stat-icon"></i>
+                <span>{{len .Items}} Articles</span>
+            </div>
+            <div class="stat-item">
+                <i class="fas fa-sync-alt stat-icon"></i>
+                <span>Auto-refresh: 5 min</span>
+            </div>
+            <div class="stat-item">
+                <i class="fas fa-broadcast-tower stat-icon"></i>
+                <span>{{.TotalSources}} Live Sources</span>
+            </div>
+            <div class="stat-item">
+                <i class="fas fa-chart-line stat-icon"></i>
+                <span id="niftyCount">0 NIFTY50 mentions</span>
+            </div>
+        </div>
+        
+        <div class="news-grid" id="newsGrid">
+            {{$sources := dict "TOI" "Times of India" "TH" "The Hindu" "BL" "Business Line" "LM" "LiveMint" "ZP" "Zerodha Pulse" "NSE_IT" "NSE Insider Trading" "NSE_BB" "NSE Buy Back" "NSE_FR" "NSE Financial Results" "NDTV_PROFIT" "NDTV Profit"}}
+            {{$sourceOrder := slice "BS_MARKETS" "BS_NEWS" "BS_COMMODITIES" "BS_IPO" "BS_STOCK_MARKET" "BS_CRYPTO" "NDTV_PROFIT" "TOI" "TH" "BL" "LM" "ZP" "NSE_IT" "NSE_BB" "NSE_FR"}}
+            
+            {{range $sourceOrder}}
+            {{$source := .}}
+            {{$sourceItems := where $.Items "Source" $source}}
+            {{if $sourceItems}}
+            <div class="news-source" data-source="{{$source}}">
+                <div class="source-header">
+                    <div class="source-icon" style="background: linear-gradient(135deg, {{(index $sourceItems 0).SourceColor}}, {{(index $sourceItems 0).SourceColor}}dd);">
+                        {{$source}}
+                    </div>
+                    <div class="source-name">{{(index $sourceItems 0).SourceName}}</div>
+                    <div class="source-badges">
+                        <div class="updated-badge">
+                            <i class="fas fa-check-circle"></i> Updated
+                        </div>
+                        <div class="item-count">{{len $sourceItems}}</div>
+                    </div>
+                </div>
+                <div class="news-items">
+                    {{range $sourceItems}}
+                                         <div class="news-item {{if .HasNifty50}}nifty50-highlight{{end}} sentiment-{{.SentimentLabel | lower}}" data-title="{{.Title | lower}}" data-description="{{.Description | lower}}" data-sentiment="{{.SentimentLabel}}" data-reading-time="{{.ReadingTime}}">
+                        {{if .HasNifty50}}
+                        <span class="nifty50-badge" title="Mentions NIFTY50 stock: {{.Nifty50Stock}}">
+                            <i class="fas fa-star"></i> {{.Nifty50Stock}}
+                        </span>
+                        {{end}}
+                        <a href="{{.Link}}" class="news-title" target="_blank" rel="noopener">{{.Title}}</a>
+                        {{if .Description}}
+                        <div class="news-description">{{.Description}}</div>
+                        {{end}}
+                        <div class="news-meta">
+                            <span class="news-time">
+                                <i class="far fa-clock"></i> {{.TimeAgo}}
+                            </span>
+                            {{if .Category}}
+                            <span class="news-category">{{.Category}}</span>
+                            {{else}}
+                            <span class="news-category">General</span>
+                            {{end}}
+                        </div>
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+            {{end}}
+            {{end}}
+        </div>
+    </div>
+    
+    <div class="floating-controls">
+        <button class="control-btn scroll-top-btn" onclick="scrollToTop()" title="Scroll to top" aria-label="Scroll to top">
+            <i class="fas fa-chevron-up"></i>
+        </button>
+        <button class="control-btn refresh-btn" onclick="refreshNews()" title="Refresh news" aria-label="Refresh news">
+            <i class="fas fa-sync-alt"></i>
+        </button>
+    </div>
+    
+    <script>
+        // Theme management
+        let isDarkMode = localStorage.getItem('darkMode') === 'true';
+        
+        function initTheme() {
+            if (isDarkMode) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                document.getElementById('themeIcon').className = 'fas fa-sun';
+                document.getElementById('themeText').textContent = 'Light Mode';
+            }
+        }
+        
+        function toggleTheme() {
+            isDarkMode = !isDarkMode;
+            localStorage.setItem('darkMode', isDarkMode);
+            
+            if (isDarkMode) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                document.getElementById('themeIcon').className = 'fas fa-sun';
+                document.getElementById('themeText').textContent = 'Light Mode';
+            } else {
+                document.documentElement.removeAttribute('data-theme');
+                document.getElementById('themeIcon').className = 'fas fa-moon';
+                document.getElementById('themeText').textContent = 'Dark Mode';
+            }
+        }
+        
+        // Search functionality
+        const searchInput = document.getElementById('searchInput');
+        const newsGrid = document.getElementById('newsGrid');
+        
+        searchInput.addEventListener('input', function() {
+            const query = this.value.toLowerCase().trim();
+            const newsSources = newsGrid.querySelectorAll('.news-source');
+            
+            newsSources.forEach(source => {
+                const newsItems = source.querySelectorAll('.news-item');
+                let visibleItems = 0;
+                
+                newsItems.forEach(item => {
+                    const title = item.getAttribute('data-title') || '';
+                    const description = item.getAttribute('data-description') || '';
+                    
+                    if (query === '' || title.includes(query) || description.includes(query)) {
+                        item.style.display = 'block';
+                        visibleItems++;
+                    } else {
+                        item.style.display = 'none';
+                    }
+                });
+                
+                // Hide source if no items are visible
+                source.style.display = visibleItems > 0 ? 'block' : 'none';
+            });
+        });
+        
+        // Scroll to top functionality
+        const scrollTopBtn = document.querySelector('.scroll-top-btn');
+        
+        window.addEventListener('scroll', function() {
+            if (window.pageYOffset > 300) {
+                scrollTopBtn.classList.add('visible');
+            } else {
+                scrollTopBtn.classList.remove('visible');
+            }
+        });
+        
+        function scrollToTop() {
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        }
+        
+        // Refresh functionality
+        function refreshNews() {
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            loadingOverlay.classList.add('show');
+            
+            setTimeout(() => {
+                location.reload();
+            }, 500);
+        }
+        
+        // Count NIFTY50 mentions
+        function countNiftyMentions() {
+            const niftyItems = document.querySelectorAll('.nifty50-highlight');
+            const count = niftyItems.length;
+            document.getElementById('niftyCount').textContent = count + ' NIFTY50 mentions';
+        }
+        
+        // Auto-refresh functionality
+        let refreshInterval = setInterval(function() {
+            console.log('Auto-refreshing news...');
+            refreshNews();
+        }, 300000); // 5 minutes
+        
+        // Update time indicators every minute
+        setInterval(function() {
+            console.log('Time indicators updated');
+        }, 60000);
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Ctrl/Cmd + R for refresh
+            if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+                e.preventDefault();
+                refreshNews();
+            }
+            
+            // Ctrl/Cmd + D for dark mode
+            if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+                e.preventDefault();
+                toggleTheme();
+            }
+            
+            // Escape to clear search
+            if (e.key === 'Escape') {
+                searchInput.value = '';
+                searchInput.dispatchEvent(new Event('input'));
+            }
+        });
+        
+                 // Analytics Dashboard Functions
+         function toggleDashboard() {
+             const dashboard = document.getElementById('analyticsDashboard');
+             if (dashboard.style.display === 'none') {
+                 dashboard.style.display = 'block';
+                 document.querySelector('.dashboard-toggle').innerHTML = '<i class="fas fa-chart-bar"></i> <span>Hide Analytics</span>';
+             } else {
+                 dashboard.style.display = 'none';
+                 document.querySelector('.dashboard-toggle').innerHTML = '<i class="fas fa-chart-bar"></i> <span>Analytics</span>';
+             }
+         }
+         
+         // Advanced Filtering
+         function applyFilters() {
+             const sourceFilter = document.getElementById('sourceFilter').value;
+             const sentimentFilter = document.getElementById('sentimentFilter').value;
+             const newsGrid = document.getElementById('newsGrid');
+             const newsSources = newsGrid.querySelectorAll('.news-source');
+             
+             newsSources.forEach(source => {
+                 const newsItems = source.querySelectorAll('.news-item');
+                 let visibleItems = 0;
+                 
+                 newsItems.forEach(item => {
+                     let shouldShow = true;
+                     
+                     // Apply sentiment filter
+                     if (sentimentFilter && !item.classList.contains('sentiment-' + sentimentFilter.toLowerCase())) {
+                         shouldShow = false;
+                     }
+                     
+                     if (shouldShow) {
+                         item.style.display = 'block';
+                         visibleItems++;
+                     } else {
+                         item.style.display = 'none';
+                     }
+                 });
+                 
+                 // Apply source filter
+                 if (sourceFilter && !source.getAttribute('data-source-name').includes(sourceFilter)) {
+                     source.style.display = 'none';
+                 } else if (visibleItems > 0) {
+                     source.style.display = 'block';
+                 } else {
+                     source.style.display = 'none';
+                 }
+             });
+         }
+         
+         // WebSocket Connection for Real-time Updates
+         let ws;
+         let reconnectInterval = 5000; // 5 seconds
+         
+         function connectWebSocket() {
+             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+             const wsUrl = protocol + '//' + window.location.host + '/ws';
+             
+             ws = new WebSocket(wsUrl);
+             
+             ws.onopen = function() {
+                 console.log('🔌 WebSocket connected - Real-time updates enabled');
+                 document.querySelector('.stats-bar').innerHTML += 
+                     '<div class="stat-item"><i class="fas fa-wifi stat-icon"></i><span>Live Updates</span></div>';
+             };
+             
+             ws.onmessage = function(event) {
+                 const data = JSON.parse(event.data);
+                 console.log('📡 Real-time update received');
+                 
+                 // Update the page with new data
+                 updatePageData(data);
+                 
+                 // Show notification
+                 showNotification('New articles available! 📰', 'info');
+             };
+             
+             ws.onclose = function() {
+                 console.log('🔌 WebSocket disconnected - Attempting reconnection...');
+                 setTimeout(connectWebSocket, reconnectInterval);
+             };
+             
+             ws.onerror = function(error) {
+                 console.error('❌ WebSocket error:', error);
+             };
+         }
+         
+         function updatePageData(data) {
+             // Update last updated time
+             const lastUpdatedElement = document.querySelector('.last-updated');
+             if (lastUpdatedElement) {
+                 lastUpdatedElement.innerHTML = '<i class="far fa-clock"></i> Last updated: ' + data.last_updated;
+             }
+             
+             // Update analytics if dashboard is visible
+             const dashboard = document.getElementById('analyticsDashboard');
+             if (dashboard && dashboard.style.display !== 'none') {
+                 updateAnalyticsDashboard(data.analytics, data.sentiment);
+             }
+             
+             // Update article count
+             const articleCountElement = document.querySelector('.stat-item span');
+             if (articleCountElement) {
+                 articleCountElement.textContent = data.items.length + ' Articles';
+             }
+         }
+         
+         function updateAnalyticsDashboard(analytics, sentiment) {
+             // Update sentiment chart
+             const positiveBar = document.querySelector('.sentiment-positive');
+             const neutralBar = document.querySelector('.sentiment-neutral');
+             const negativeBar = document.querySelector('.sentiment-negative');
+             
+             if (positiveBar) {
+                 positiveBar.style.width = sentiment.positive + '%';
+                 positiveBar.textContent = sentiment.positive.toFixed(1) + '%';
+             }
+             if (neutralBar) {
+                 neutralBar.style.width = sentiment.neutral + '%';
+                 neutralBar.textContent = sentiment.neutral.toFixed(1) + '%';
+             }
+             if (negativeBar) {
+                 negativeBar.style.width = sentiment.negative + '%';
+                 negativeBar.textContent = sentiment.negative.toFixed(1) + '%';
+             }
+             
+             // Update overall sentiment
+             const overallElement = document.querySelector('.overall-sentiment strong');
+             if (overallElement) {
+                 overallElement.textContent = sentiment.overall;
+                 overallElement.className = 'sentiment-' + sentiment.overall.toLowerCase();
+             }
+         }
+         
+         // Notification System
+         function showNotification(message, type = 'info') {
+             // Create notification element
+             const notification = document.createElement('div');
+             notification.className = 'notification notification-' + type;
+             notification.innerHTML = 
+                 '<div class="notification-content">' +
+                     '<span>' + message + '</span>' +
+                     '<button onclick="this.parentElement.parentElement.remove()">×</button>' +
+                 '</div>';
+             
+             // Add to page
+             document.body.appendChild(notification);
+             
+             // Auto remove after 5 seconds
+             setTimeout(() => {
+                 if (notification.parentElement) {
+                     notification.remove();
+                 }
+             }, 5000);
+         }
+         
+         // Enhanced article interactions
+         function addArticleInteractions() {
+             const newsItems = document.querySelectorAll('.news-item');
+             
+             newsItems.forEach(item => {
+                 // Add reading time display
+                 const readingTime = item.getAttribute('data-reading-time');
+                 if (readingTime) {
+                     const metaDiv = item.querySelector('.news-meta');
+                     const readingTimeSpan = document.createElement('span');
+                     readingTimeSpan.className = 'reading-time';
+                     readingTimeSpan.innerHTML = '<i class="far fa-clock"></i> ' + readingTime + ' min read';
+                     metaDiv.appendChild(readingTimeSpan);
+                 }
+                 
+                 // Add sentiment indicator
+                 const sentiment = item.getAttribute('data-sentiment');
+                 if (sentiment) {
+                     item.classList.add('sentiment-' + sentiment.toLowerCase());
+                     
+                     const sentimentIndicator = document.createElement('div');
+                     sentimentIndicator.className = 'sentiment-indicator sentiment-' + sentiment.toLowerCase();
+                     sentimentIndicator.title = 'Sentiment: ' + sentiment;
+                     
+                     let icon = '😐';
+                     if (sentiment === 'Positive') icon = '😊';
+                     if (sentiment === 'Negative') icon = '😔';
+                     
+                     sentimentIndicator.textContent = icon;
+                     item.appendChild(sentimentIndicator);
+                 }
+             });
+         }
+         
+         // Performance monitoring
+         function monitorPerformance() {
+             if ('performance' in window) {
+                 window.addEventListener('load', function() {
+                     const loadTime = performance.timing.loadEventEnd - performance.timing.navigationStart;
+                     console.log('⚡ Page load time:', loadTime + 'ms');
+                     
+                     if (loadTime > 3000) {
+                         console.warn('⚠️  Slow page load detected');
+                     }
+                 });
+             }
+         }
+         
+         // Initialize all advanced features on page load
+         document.addEventListener('DOMContentLoaded', function() {
+             initTheme();
+             countNiftyMentions();
+             connectWebSocket();
+             addArticleInteractions();
+             monitorPerformance();
+             
+             console.log('🚀 Advanced Business News Aggregator loaded');
+             console.log('🔄 Auto-refresh every 5 minutes');
+             console.log('📡 Real-time WebSocket updates enabled');
+             console.log('🎯 Advanced analytics dashboard available');
+             console.log('⌨️  Keyboard shortcuts: Ctrl+R (refresh), Ctrl+D (theme), Esc (clear search)');
+         });
+        
+        // Performance optimization - lazy loading for images if any
+        if ('IntersectionObserver' in window) {
+            const imageObserver = new IntersectionObserver((entries, observer) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const img = entry.target;
+                        img.src = img.dataset.src;
+                        img.classList.remove('lazy');
+                        imageObserver.unobserve(img);
+                    }
+                });
+            });
+        }
+        
+        // Add smooth scrolling for better UX
+        document.documentElement.style.scrollBehavior = 'smooth';
+        
+        // Add focus management for accessibility
+        searchInput.addEventListener('focus', function() {
+            this.style.transform = 'scale(1.02)';
+        });
+        
+        searchInput.addEventListener('blur', function() {
+            this.style.transform = 'scale(1)';
+        });
+    </script>
+</body>
+</html>
+`
+
+	// Template helper functions
+	funcMap := template.FuncMap{
+		"dict": func(values ...interface{}) map[string]interface{} {
+			dict := make(map[string]interface{})
+			for i := 0; i < len(values); i += 2 {
+				key := values[i].(string)
+				value := values[i+1]
+				dict[key] = value
+			}
+			return dict
+		},
+		"slice": func(values ...string) []string {
+			return values
+		},
+		"where": func(items []NewsItem, field, value string) []NewsItem {
+			var result []NewsItem
+			for _, item := range items {
+				switch field {
+				case "Source":
+					if item.Source == value {
+						result = append(result, item)
+					}
 				}
 			}
-		}
-		news = filteredNews
+			return result
+		},
+		"lower": func(s string) string {
+			return strings.ToLower(s)
+		},
+		"printf": func(format string, args ...interface{}) string {
+			return fmt.Sprintf(format, args...)
+		},
+		"div": func(a, b int) int {
+			if b == 0 {
+				return 0
+			}
+			return a / b
+		},
+		"mul": func(a, b int) int {
+			return a * b
+		},
 	}
 
-	// Load and parse template
-	tmpl, err := template.ParseFiles("template.html")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
+	t := template.Must(template.New("home").Funcs(funcMap).Parse(tmpl))
 	data := NewsData{
 		Items:        news,
 		LastUpdated:  lastUpdated,
@@ -959,31 +2594,111 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Expires", "0")
 
-	if err := tmpl.Execute(w, data); err != nil {
+	if err := t.Execute(w, data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 }
 
+func apiHandler(w http.ResponseWriter, r *http.Request) {
+	news, lastUpdated := getCurrentNews()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	fmt.Fprintf(w, `{
+		"items": %d,
+		"last_updated": "%s",
+		"sources": %d,
+		"max_articles": %d,
+		"memory_optimized": true,
+		"status": "success"
+	}`, len(news), lastUpdated, len(rssSources), MAX_TOTAL_ARTICLES)
+}
+
+// Memory management function
+func performMemoryCleanup() {
+	log.Println("🧹 Performing memory cleanup...")
+	
+	newsMutex.Lock()
+	// Clear any articles older than 24 hours
+	var recentNews []NewsItem
+	cutoff := time.Now().Add(-24 * time.Hour)
+	
+	for _, item := range currentNews {
+		if item.PubDate.After(cutoff) {
+			recentNews = append(recentNews, item)
+		}
+	}
+	
+	if len(recentNews) != len(currentNews) {
+		log.Printf("🗑️  Cleaned %d old articles", len(currentNews)-len(recentNews))
+		currentNews = recentNews
+	}
+	newsMutex.Unlock()
+	
+	// Force garbage collection
+	runtime.GC()
+	
+	// Log memory stats
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	log.Printf("💾 Memory: Alloc=%dKB Sys=%dKB NumGC=%d", 
+		m.Alloc/1024, m.Sys/1024, m.NumGC)
+}
+
+func startPeriodicRefresh() {
+	// Initial fetch
+	fetchAllNews()
+
+	// Set up periodic refresh every 5 minutes
+	refreshTicker := time.NewTicker(5 * time.Minute)
+	go func() {
+		for range refreshTicker.C {
+			fetchAllNews()
+		}
+	}()
+	
+	// Set up memory cleanup every 1 minute
+	cleanupTicker := time.NewTicker(MEMORY_CLEANUP_INTERVAL * time.Minute)
+	go func() {
+		for range cleanupTicker.C {
+			performMemoryCleanup()
+		}
+	}()
+}
+
 func main() {
-    // Initialize HTTP routes
-    http.HandleFunc("/", homeHandler)
-    http.HandleFunc("/filter", filterHandler)
-    http.HandleFunc("/ws", handleWebSocket)
-    http.HandleFunc("/analytics", analyticsHandler)
-    http.HandleFunc("/sentiment", sentimentHandler)
+	// Start the periodic refresh in the background
+	go startPeriodicRefresh()
 
-    // Start background news fetching
-    go func() {
-        for {
-            fetchAllNews()
-            time.Sleep(5 * time.Minute)
-        }
-    }()
+	// HTTP handlers
+	http.HandleFunc("/", homeHandler)
+	http.HandleFunc("/api/status", apiHandler)
+	http.HandleFunc("/api/analytics", analyticsHandler)
+	http.HandleFunc("/api/sentiment", sentimentHandler)
+	http.HandleFunc("/api/filter", filterHandler)
+	http.HandleFunc("/ws", handleWebSocket)
 
-    // Start the server
-    fmt.Println("Server starting on :8080...")
-    if err := http.ListenAndServe(":8080", nil); err != nil {
-        log.Fatal(err)
-    }
+	fmt.Println("🚀 Advanced RSS News Aggregator starting...")
+	fmt.Println("📡 Fetching feeds from", len(rssSources), "sources:")
+	for code, source := range rssSources {
+		fmt.Printf("   • %s: %s\n", code, source.Name)
+	}
+	fmt.Println("🔄 Auto-refresh interval: 5 minutes")
+	fmt.Println("🌐 Server running at http://localhost:8080")
+	fmt.Println("📊 API endpoints:")
+	fmt.Println("   • Status: http://localhost:8080/api/status")
+	fmt.Println("   • Analytics: http://localhost:8080/api/analytics")
+	fmt.Println("   • Sentiment: http://localhost:8080/api/sentiment")
+	fmt.Println("   • Filter: http://localhost:8080/api/filter")
+	fmt.Println("🔌 WebSocket: ws://localhost:8080/ws")
+	fmt.Println("🎯 Advanced Features:")
+	fmt.Println("   • AI-powered sentiment analysis")
+	fmt.Println("   • Real-time analytics dashboard")
+	fmt.Println("   • Smart keyword extraction")
+	fmt.Println("   • Priority-based news ranking")
+	fmt.Println("   • Live WebSocket updates")
+
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
