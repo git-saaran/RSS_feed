@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -196,13 +197,20 @@ var rssSources = map[string]struct {
 	},
 }
 
-// Global cache for news items
+// Real-time data structures (no historical storage)
 var (
-	newsCache     []NewsItem
-	lastCacheTime time.Time
-	cacheMutex    sync.RWMutex
-	analytics     NewsAnalytics
-	sentiment     SentimentData
+	currentNews   []NewsItem    // Only current batch, cleared on each refresh
+	lastFetchTime time.Time
+	newsMutex     sync.RWMutex
+	liveAnalytics NewsAnalytics // Real-time analytics only
+	liveSentiment SentimentData // Real-time sentiment only
+)
+
+// Configuration for memory efficiency
+const (
+	MAX_ARTICLES_PER_SOURCE = 10  // Limit articles per source
+	MAX_TOTAL_ARTICLES      = 150 // Total articles limit (15 sources × 10)
+	MEMORY_CLEANUP_INTERVAL = 1   // Cleanup every 1 minute
 )
 
 // Advanced AI-powered features
@@ -467,16 +475,16 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	
 	log.Printf("Client connected. Total clients: %d", len(clients))
 	
-	// Send initial data
-	cacheMutex.RLock()
+	// Send initial real-time data
+	newsMutex.RLock()
 	data := NewsData{
-		Items:        newsCache,
-		LastUpdated:  lastCacheTime.In(istLocation).Format("Jan 2, 2006 at 3:04 PM"),
+		Items:        currentNews,
+		LastUpdated:  lastFetchTime.In(istLocation).Format("Jan 2, 2006 at 3:04 PM"),
 		TotalSources: len(rssSources),
-		Analytics:    analytics,
-		Sentiment:    sentiment,
+		Analytics:    liveAnalytics,
+		Sentiment:    liveSentiment,
 	}
-	cacheMutex.RUnlock()
+	newsMutex.RUnlock()
 	
 	conn.WriteJSON(data)
 	
@@ -494,15 +502,15 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 func broadcastUpdate() {
-	cacheMutex.RLock()
+	newsMutex.RLock()
 	data := NewsData{
-		Items:        newsCache,
-		LastUpdated:  lastCacheTime.In(istLocation).Format("Jan 2, 2006 at 3:04 PM"),
+		Items:        currentNews,
+		LastUpdated:  lastFetchTime.In(istLocation).Format("Jan 2, 2006 at 3:04 PM"),
 		TotalSources: len(rssSources),
-		Analytics:    analytics,
-		Sentiment:    sentiment,
+		Analytics:    liveAnalytics,
+		Sentiment:    liveSentiment,
 	}
-	cacheMutex.RUnlock()
+	newsMutex.RUnlock()
 	
 	clientsMutex.RLock()
 	for client := range clients {
@@ -682,7 +690,13 @@ func checkForNifty50(text string) (bool, string) {
 }
 
 func fetchAllNews() {
-	log.Println("🔄 Fetching news from all sources...")
+	log.Println("🔄 Fetching real-time news (memory optimized)...")
+	
+	// Clear previous data for real-time operation
+	newsMutex.Lock()
+	currentNews = nil // Clear all previous news
+	newsMutex.Unlock()
+	
 	var allNews []NewsItem
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -702,15 +716,29 @@ func fetchAllNews() {
 				return
 			}
 
-			log.Printf("✅ Successfully fetched %s: %d items", sName, len(rss.Channel.Items))
+			// Limit articles per source for memory efficiency
+			itemsToProcess := len(rss.Channel.Items)
+			if itemsToProcess > MAX_ARTICLES_PER_SOURCE {
+				itemsToProcess = MAX_ARTICLES_PER_SOURCE
+				log.Printf("⚡ Limited %s to %d items (memory optimization)", sName, MAX_ARTICLES_PER_SOURCE)
+			}
+
+			log.Printf("✅ Fetched %s: processing %d/%d items", sName, itemsToProcess, len(rss.Channel.Items))
 
 			mu.Lock()
-			for _, item := range rss.Channel.Items {
+			for i := 0; i < itemsToProcess; i++ {
+				item := rss.Channel.Items[i]
+				
 				if item.Title == "" {
 					continue // Skip empty items
 				}
 
 				pubTime := parseTime(item.PubDate)
+				
+				// Skip articles older than 24 hours for real-time focus
+				if time.Since(pubTime) > 24*time.Hour {
+					continue
+				}
 
 				// Check for NIFTY50 mentions in title and description
 				hasNifty50Title, niftyStock := checkForNifty50(item.Title)
@@ -721,7 +749,7 @@ func fetchAllNews() {
 					niftyStockName = niftyStockDesc
 				}
 
-				// Advanced AI features
+				// Lightweight processing for memory efficiency
 				fullText := item.Title + " " + item.Description
 				sentimentScore, sentimentLabel := analyzeSentiment(fullText)
 				keywords := extractKeywords(fullText)
@@ -738,10 +766,10 @@ func fetchAllNews() {
 					Source:         sName,
 					SourceColor:    src.Color,
 					SourceName:     src.Name,
-					HasNifty50:      hasNifty50,
-					Nifty50Stock:    niftyStockName,
-					SentimentScore:  sentimentScore,
-					SentimentLabel:  sentimentLabel,
+					HasNifty50:     hasNifty50,
+					Nifty50Stock:   niftyStockName,
+					SentimentScore: sentimentScore,
+					SentimentLabel: sentimentLabel,
 					Summary:        summary,
 					Keywords:       keywords,
 					ReadingTime:    readingTime,
@@ -751,6 +779,12 @@ func fetchAllNews() {
 				newsItem.Priority = calculatePriority(newsItem)
 
 				allNews = append(allNews, newsItem)
+				
+				// Memory safety check
+				if len(allNews) >= MAX_TOTAL_ARTICLES {
+					log.Printf("⚠️  Reached max articles limit (%d), stopping collection", MAX_TOTAL_ARTICLES)
+					break
+				}
 			}
 			mu.Unlock()
 		}(sourceName, source)
@@ -758,53 +792,66 @@ func fetchAllNews() {
 
 	wg.Wait()
 
-	// Sort by priority first, then by publication date (newest first)
-	sort.Slice(allNews, func(i, j int) bool {
-		if allNews[i].Priority == allNews[j].Priority {
-			return allNews[i].PubDate.After(allNews[j].PubDate)
-		}
-		return allNews[i].Priority > allNews[j].Priority
-	})
+	// Limit total articles and sort by priority + recency
+	if len(allNews) > MAX_TOTAL_ARTICLES {
+		log.Printf("⚡ Trimming to %d articles for memory efficiency", MAX_TOTAL_ARTICLES)
+		
+		// Sort by priority first, then by publication date (newest first)
+		sort.Slice(allNews, func(i, j int) bool {
+			if allNews[i].Priority == allNews[j].Priority {
+				return allNews[i].PubDate.After(allNews[j].PubDate)
+			}
+			return allNews[i].Priority > allNews[j].Priority
+		})
+		
+		// Keep only top articles
+		allNews = allNews[:MAX_TOTAL_ARTICLES]
+	}
 
-	// Generate analytics and sentiment data
+	// Generate real-time analytics (no historical data)
 	analyticsData := generateAnalytics(allNews)
 	sentimentData := generateSentimentData(allNews)
 
-	// Update cache
-	cacheMutex.Lock()
-	newsCache = allNews
-	lastCacheTime = time.Now()
-	analytics = analyticsData
-	sentiment = sentimentData
-	cacheMutex.Unlock()
+	// Update real-time data (replace completely)
+	newsMutex.Lock()
+	currentNews = allNews
+	lastFetchTime = time.Now()
+	liveAnalytics = analyticsData
+	liveSentiment = sentimentData
+	newsMutex.Unlock()
 
-	log.Printf("📊 Total news items cached: %d", len(allNews))
-	log.Printf("🎯 Analytics generated - Top keyword: %s", analytics.TopKeywords[0].Keyword)
-	log.Printf("😊 Overall sentiment: %s", sentiment.Overall)
+	log.Printf("📊 Real-time articles: %d (max: %d)", len(allNews), MAX_TOTAL_ARTICLES)
+	if len(analyticsData.TopKeywords) > 0 {
+		log.Printf("🎯 Top keyword: %s", analyticsData.TopKeywords[0].Keyword)
+	}
+	log.Printf("😊 Live sentiment: %s", sentimentData.Overall)
 
-	// Broadcast update to WebSocket clients
+	// Force garbage collection for memory efficiency
+	runtime.GC()
+
+	// Broadcast real-time update to WebSocket clients
 	broadcastUpdate()
 }
 
-func getNewsFromCache() ([]NewsItem, string) {
-	cacheMutex.RLock()
-	defer cacheMutex.RUnlock()
+func getCurrentNews() ([]NewsItem, string) {
+	newsMutex.RLock()
+	defer newsMutex.RUnlock()
 
-	// Update time ago for all items
-	for i := range newsCache {
-		newsCache[i].TimeAgo = timeAgo(newsCache[i].PubDate)
+	// Update time ago for all items (real-time)
+	for i := range currentNews {
+		currentNews[i].TimeAgo = timeAgo(currentNews[i].PubDate)
 	}
 
 	// Format the time in IST
-	istTime := lastCacheTime.In(istLocation)
-	return newsCache, istTime.Format("Jan 2, 2006 at 3:04 PM")
+	istTime := lastFetchTime.In(istLocation)
+	return currentNews, istTime.Format("Jan 2, 2006 at 3:04 PM")
 }
 
-// Advanced API handlers
+// Real-time API handlers (no historical data)
 func analyticsHandler(w http.ResponseWriter, r *http.Request) {
-	cacheMutex.RLock()
-	data := analytics
-	cacheMutex.RUnlock()
+	newsMutex.RLock()
+	data := liveAnalytics
+	newsMutex.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -812,9 +859,9 @@ func analyticsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func sentimentHandler(w http.ResponseWriter, r *http.Request) {
-	cacheMutex.RLock()
-	data := sentiment
-	cacheMutex.RUnlock()
+	newsMutex.RLock()
+	data := liveSentiment
+	newsMutex.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -828,9 +875,9 @@ func filterHandler(w http.ResponseWriter, r *http.Request) {
 	sentiment := query.Get("sentiment")
 	nifty50Only := query.Get("nifty50") == "true"
 	
-	cacheMutex.RLock()
-	allItems := newsCache
-	cacheMutex.RUnlock()
+	newsMutex.RLock()
+	allItems := currentNews
+	newsMutex.RUnlock()
 	
 	var filtered []NewsItem
 	for _, item := range allItems {
@@ -855,12 +902,12 @@ func filterHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
-	news, lastUpdated := getNewsFromCache()
+	news, lastUpdated := getCurrentNews()
 	
-	cacheMutex.RLock()
-	analyticsData := analytics
-	sentimentData := sentiment
-	cacheMutex.RUnlock()
+	newsMutex.RLock()
+	analyticsData := liveAnalytics
+	sentimentData := liveSentiment
+	newsMutex.RUnlock()
 
 	tmpl := `
 <!DOCTYPE html>
@@ -2549,7 +2596,7 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func apiHandler(w http.ResponseWriter, r *http.Request) {
-	news, lastUpdated := getNewsFromCache()
+	news, lastUpdated := getCurrentNews()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -2558,8 +2605,41 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 		"items": %d,
 		"last_updated": "%s",
 		"sources": %d,
+		"max_articles": %d,
+		"memory_optimized": true,
 		"status": "success"
-	}`, len(news), lastUpdated, len(rssSources))
+	}`, len(news), lastUpdated, len(rssSources), MAX_TOTAL_ARTICLES)
+}
+
+// Memory management function
+func performMemoryCleanup() {
+	log.Println("🧹 Performing memory cleanup...")
+	
+	newsMutex.Lock()
+	// Clear any articles older than 24 hours
+	var recentNews []NewsItem
+	cutoff := time.Now().Add(-24 * time.Hour)
+	
+	for _, item := range currentNews {
+		if item.PubDate.After(cutoff) {
+			recentNews = append(recentNews, item)
+		}
+	}
+	
+	if len(recentNews) != len(currentNews) {
+		log.Printf("🗑️  Cleaned %d old articles", len(currentNews)-len(recentNews))
+		currentNews = recentNews
+	}
+	newsMutex.Unlock()
+	
+	// Force garbage collection
+	runtime.GC()
+	
+	// Log memory stats
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	log.Printf("💾 Memory: Alloc=%dKB Sys=%dKB NumGC=%d", 
+		m.Alloc/1024, m.Sys/1024, m.NumGC)
 }
 
 func startPeriodicRefresh() {
@@ -2567,10 +2647,18 @@ func startPeriodicRefresh() {
 	fetchAllNews()
 
 	// Set up periodic refresh every 5 minutes
-	ticker := time.NewTicker(5 * time.Minute)
+	refreshTicker := time.NewTicker(5 * time.Minute)
 	go func() {
-		for range ticker.C {
+		for range refreshTicker.C {
 			fetchAllNews()
+		}
+	}()
+	
+	// Set up memory cleanup every 1 minute
+	cleanupTicker := time.NewTicker(MEMORY_CLEANUP_INTERVAL * time.Minute)
+	go func() {
+		for range cleanupTicker.C {
+			performMemoryCleanup()
 		}
 	}()
 }
